@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""
+gemini2mqtt - Receives prompts via MQTT and forwards them to Gemini AI via Gemini CLI.
+Message format: "response_topic|use_vertex_api|prompt"
+"""
+
+import os
+import subprocess
+import logging
+import signal
+import sys
+import time
+from typing import Optional
+
+import paho.mqtt.client as mqtt
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# ── Configuration (from environment variables) ────────────────────────────────
+def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
+    value = os.environ.get(name, default)
+    if required and not value:
+        logger.error("Required environment variable '%s' is not set.", name)
+        sys.exit(1)
+    return value
+
+
+MQTT_HOST = get_env("MQTT_HOST", "localhost")
+MQTT_PORT = int(get_env("MQTT_PORT", "1883"))
+MQTT_USERNAME = get_env("MQTT_USERNAME")
+MQTT_PASSWORD = get_env("MQTT_PASSWORD")
+MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
+GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
+VERTEX_CLI_PATH = get_env("VERTEX_CLI_PATH", "gemini")  # can differ for vertex ai variant
+GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-2.5-pro-preview-03-25")
+VERTEX_PROJECT = get_env("VERTEX_PROJECT")
+VERTEX_LOCATION = get_env("VERTEX_LOCATION", "europe-west3")
+
+
+# ── Gemini helpers ────────────────────────────────────────────────────────────
+
+def call_gemini(prompt: str, use_vertex: bool) -> str:
+    """Invoke the appropriate Gemini CLI and return the text response."""
+    if use_vertex:
+        cmd = build_vertex_command(prompt)
+    else:
+        cmd = build_standard_command(prompt)
+
+    logger.debug("Running command: %s", cmd)
+    try:
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            logger.error("Gemini CLI error (rc=%d): %s", result.returncode, result.stderr.strip())
+            return f"ERROR: Gemini CLI returned code {result.returncode}: {result.stderr.strip()}"
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        logger.error("Gemini CLI timed out after 120 s")
+        return "ERROR: Gemini CLI timed out."
+    except FileNotFoundError as exc:
+        logger.error("Gemini CLI not found: %s", exc)
+        return f"ERROR: Gemini CLI not found: {exc}"
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("Unexpected error calling Gemini CLI")
+        return f"ERROR: {exc}"
+
+
+def build_standard_command(prompt: str) -> list[str]:
+    """Build command for the standard Gemini API."""
+    return [
+        GEMINI_CLI_PATH,
+        "--model", GEMINI_MODEL,
+        "-p", prompt,
+    ]
+
+
+def build_vertex_command(prompt: str) -> list[str]:
+    """Build command for the Vertex AI Gemini API."""
+    cmd = [
+        VERTEX_CLI_PATH,
+        "--model", GEMINI_MODEL,
+        "-p", prompt,
+    ]
+    if VERTEX_PROJECT:
+        cmd += ["--project", VERTEX_PROJECT]
+    if VERTEX_LOCATION:
+        cmd += ["--location", VERTEX_LOCATION]
+    return cmd
+
+
+# ── MQTT callbacks ────────────────────────────────────────────────────────────
+
+def parse_message(payload: str) -> tuple[str, bool, str] | None:
+    """
+    Parse the incoming MQTT message.
+    Expected format: "response_topic|use_vertex_api|prompt"
+    Returns (response_topic, use_vertex, prompt) or None on parse error.
+    """
+    parts = payload.split("|", 2)
+    if len(parts) != 3:
+        logger.warning("Invalid message format (expected 3 pipe-separated fields): %r", payload)
+        return None
+    response_topic, use_vertex_str, prompt = parts
+    use_vertex = use_vertex_str.strip().lower() in ("true", "1", "yes")
+    return response_topic.strip(), use_vertex, prompt.strip()
+
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        logger.info("Connected to MQTT broker at %s:%d", MQTT_HOST, MQTT_PORT)
+        client.subscribe(MQTT_PROMPT_TOPIC)
+        logger.info("Subscribed to topic: %s", MQTT_PROMPT_TOPIC)
+    else:
+        logger.error("MQTT connection failed with reason code: %s", reason_code)
+
+
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    if reason_code != 0:
+        logger.warning("Unexpected disconnect (rc=%s). Reconnecting…", reason_code)
+
+
+def on_message(client, userdata, msg):
+    payload = msg.payload.decode("utf-8", errors="replace")
+    logger.info("Received message on topic '%s'", msg.topic)
+    logger.debug("Payload: %r", payload)
+
+    parsed = parse_message(payload)
+    if parsed is None:
+        return
+
+    response_topic, use_vertex, prompt = parsed
+    api_label = "Vertex AI" if use_vertex else "Standard Gemini"
+    logger.info("Forwarding prompt to %s (response → '%s')", api_label, response_topic)
+
+    response = call_gemini(prompt, use_vertex)
+
+    client.publish(response_topic, response)
+    logger.info("Response published to topic '%s'", response_topic)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.on_message = on_message
+
+    # Graceful shutdown on SIGTERM / SIGINT
+    def _shutdown(signum, frame):
+        logger.info("Shutting down (signal %d)…", signum)
+        client.loop_stop()
+        client.disconnect()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    logger.info("Connecting to MQTT broker %s:%d …", MQTT_HOST, MQTT_PORT)
+    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+    client.loop_forever()
+
+
+if __name__ == "__main__":
+    main()
