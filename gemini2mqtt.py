@@ -9,8 +9,7 @@ import subprocess
 import logging
 import signal
 import sys
-import threading
-import time
+import concurrent.futures
 from typing import Optional
 
 import paho.mqtt.client as mqtt
@@ -40,6 +39,9 @@ MQTT_PASSWORD = get_env("MQTT_PASSWORD")
 MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
 GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
 GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
+GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
+
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
@@ -121,11 +123,7 @@ def on_message(client, userdata, msg):
         return
 
     response_topic, prompt = parsed
-    threading.Thread(
-        target=_handle_prompt,
-        args=(client, response_topic, prompt),
-        daemon=True,
-    ).start()
+    _executor.submit(_handle_prompt, client, response_topic, prompt)
 
 
 def _handle_prompt(client, response_topic: str, prompt: str) -> None:
@@ -152,6 +150,7 @@ def main():
         logger.info("Shutting down (signal %d)…", signum)
         client.loop_stop()
         client.disconnect()
+        _executor.shutdown(wait=False)
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)
