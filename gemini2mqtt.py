@@ -10,6 +10,9 @@ import logging
 import signal
 import sys
 import concurrent.futures
+import datetime
+import threading
+import time
 from typing import Optional
 
 import paho.mqtt.client as mqtt
@@ -134,6 +137,27 @@ def _handle_prompt(client, response_topic: str, prompt: str) -> None:
     logger.info("Response published to topic '%s'", response_topic)
 
 
+# ── Daily keepalive ───────────────────────────────────────────────────────────
+
+def _keepalive_loop() -> None:
+    """Send a daily dummy prompt to Gemini at noon to keep the auth token alive."""
+    while True:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        next_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        if next_noon <= now:
+            next_noon += datetime.timedelta(days=1)
+        sleep_seconds = (next_noon - now).total_seconds()
+        logger.info(
+            "Keepalive: next Gemini ping scheduled at %s UTC (in %.0f s)",
+            next_noon.strftime("%Y-%m-%d %H:%M:%S"),
+            sleep_seconds,
+        )
+        time.sleep(sleep_seconds)
+        logger.info("Keepalive: sending daily Gemini ping…")
+        response = call_gemini("ping")
+        logger.info("Keepalive: Gemini ping done: %s", response)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -159,6 +183,9 @@ def main():
 
     logger.info("Connecting to MQTT broker %s:%d …", MQTT_HOST, MQTT_PORT)
     client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+
+    threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
+
     client.loop_forever()
 
 
