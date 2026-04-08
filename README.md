@@ -1,79 +1,79 @@
 # gemini2mqtt
 
-> Ein MQTT-zu-Gemini-AI-Bridge-Dienst, der Prompts über MQTT empfängt, sie an die Gemini AI weiterleitet und die Antwort zurück per MQTT sendet.
+> An MQTT-to-Gemini-AI bridge service that receives prompts via MQTT, forwards them to Gemini AI, and publishes the response back via MQTT.
 
 ---
 
-## Funktionsweise
+## How it works
 
 ```
 MQTT Broker
   │
-  ├─► Topic: MQTT_PROMPT_TOPIC   (Eingang)
-  │       Nachrichtenformat: "response_topic|prompt"
+  ├─► Topic: MQTT_PROMPT_TOPIC   (incoming)
+  │       Message format: "response_topic|prompt"
   │
-  └─► Topic: <response_topic>    (Ausgang)
-          Inhalt: Antwort von Gemini AI
+  └─► Topic: <response_topic>    (outgoing)
+          Content: Gemini AI response
 ```
 
-### Nachrichtenformat
+### Message format
 
-Eingehende Nachrichten müssen zwei durch `|` getrennte Felder enthalten:
+Incoming messages must contain two `|`-separated fields:
 
-| Feld | Beschreibung | Beispiel |
+| Field | Description | Example |
 |---|---|---|
-| `response_topic` | MQTT-Topic für die Antwort | `home/ai/response` |
-| `prompt` | Der an Gemini gesendete Prompt | `Was ist 2+2?` |
+| `response_topic` | MQTT topic to publish the response to | `home/ai/response` |
+| `prompt` | The prompt to send to Gemini AI | `What is 2+2?` |
 
-**Beispiel:**
+**Example:**
 ```
-home/ai/response|Was ist die Hauptstadt von Bayern?
+home/ai/response|What is the capital of Bavaria?
 ```
 
 ---
 
-## Konfiguration (Umgebungsvariablen)
+## Configuration (environment variables)
 
-Alle Einstellungen erfolgen über Umgebungsvariablen. Kopiere `.env.example` nach `.env` und passe die Werte an:
+All settings are configured via environment variables. Copy `.env.example` to `.env` and adjust the values:
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Standard | Pflicht | Beschreibung |
+| Variable | Default | Required | Description |
 |---|---|---|---|
-| `MQTT_HOST` | `localhost` | – | Hostname des MQTT-Brokers |
-| `MQTT_PORT` | `1883` | – | Port des MQTT-Brokers |
-| `MQTT_USERNAME` | – | – | MQTT-Benutzername |
-| `MQTT_PASSWORD` | – | – | MQTT-Passwort |
-| `MQTT_PROMPT_TOPIC` | `gemini2mqtt/prompt` | **Ja** | Topic für eingehende Prompts |
-| `GEMINI_CLI_PATH` | `gemini` | – | Pfad zum Gemini-CLI-Binary |
-| `GEMINI_MODEL` | `gemini-2.5-pro-preview-03-25` | – | Gemini-Modell |
-| `GEMINI_MAX_CONCURRENT` | `2` | – | Max. gleichzeitige Gemini-Aufrufe |
-| `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout für Gemini-CLI-Aufruf in Sekunden |
+| `MQTT_HOST` | `localhost` | – | MQTT broker hostname |
+| `MQTT_PORT` | `1883` | – | MQTT broker port |
+| `MQTT_USERNAME` | – | – | MQTT username |
+| `MQTT_PASSWORD` | – | – | MQTT password |
+| `MQTT_PROMPT_TOPIC` | `gemini2mqtt/prompt` | **Yes** | Topic for incoming prompts |
+| `GEMINI_CLI_PATH` | `gemini` | – | Path to the Gemini CLI binary |
+| `GEMINI_MODEL` | `gemini-2.5-pro-preview-03-25` | – | Gemini model |
+| `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
+| `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
 
 ---
 
-## Deployment mit Docker
+## Deployment with Docker
 
-### Schnellstart
+### Quick start
 
 ```bash
-# 1. .env anlegen
+# 1. Create .env
 cp .env.example .env
-# (Werte in .env anpassen)
+# (adjust values in .env)
 
-# 2. Image bauen und Container starten
+# 2. Build image and start container
 docker compose up -d --build
 ```
 
-### Logs ansehen
+### View logs
 
 ```bash
 docker compose logs -f gemini2mqtt
 ```
 
-### Container stoppen
+### Stop container
 
 ```bash
 docker compose down
@@ -81,60 +81,60 @@ docker compose down
 
 ---
 
-## Lokale Entwicklung (ohne Docker)
+## Local development (without Docker)
 
 ```bash
-# Abhängigkeiten installieren
+# Install dependencies
 pip install -r requirements.txt
 
-# Umgebungsvariablen setzen
+# Set environment variables
 cp .env.example .env
-# .env nach Bedarf anpassen
+# adjust .env as needed
 
-# Starten
+# Start
 python gemini2mqtt.py
 ```
 
-> **Voraussetzung:** Die Gemini CLI muss lokal installiert und auf dem `PATH` verfügbar sein.  
+> **Prerequisite:** The Gemini CLI must be installed locally and available on the `PATH`.  
 > Installation: `npm install -g @google/gemini-cli`
 
 ---
 
-## Authentifizierung (Gemini CLI)
+## Authentication (Gemini CLI)
 
-Um sich mit der Gemini API zu authentifizieren, müssen die Credentials einmalig im Container erzeugt und in ein lokales Verzeichnis persistiert werden:
+To authenticate with the Gemini API, credentials must be generated once inside a container and persisted to a local directory:
 
 ```bash
-# Lokales Verzeichnis für Credentials anlegen
-mkdir -p /pfad/zum/credentials-verzeichnis
+# Create a local directory for credentials
+mkdir -p /path/to/credentials-directory
 
-# Container interaktiv mit Gemini CLI starten und Verzeichnis mounten
+# Start container interactively with Gemini CLI and mount the directory
 docker run -it --rm --entrypoint gemini \
-  -v "/pfad/zum/credentials-verzeichnis:/root/.gemini" \
+  -v "/path/to/credentials-directory:/root/.gemini" \
   peez/gemini2mqtt
 ```
 
-Im interaktiven CLI:
+In the interactive CLI:
 
-1. Mit den Pfeiltasten zu **„Sign in with Google"** navigieren und bestätigen.
-2. Die angezeigte URL kopieren und im Browser öffnen.
-3. Den Google-Auth-Flow abschließen und den angezeigten Code zurück in das CLI einfügen.
-4. Nach erfolgreicher Authentifizierung werden die Credentials in `/pfad/zum/credentials-verzeichnis` gespeichert.
+1. Navigate to **"Sign in with Google"** using the arrow keys and confirm.
+2. Copy the displayed URL and open it in your browser.
+3. Complete the Google auth flow and paste the displayed code back into the CLI.
+4. After successful authentication, credentials are saved to `/path/to/credentials-directory`.
 
-Dieses Verzeichnis dann als Volume in `docker-compose.yml` einbinden, damit der Dienst die gespeicherten Credentials beim Start nutzt.
+Mount this directory as a volume in `docker-compose.yml` so the service uses the stored credentials on startup.
 
 ---
 
-## Projektstruktur
+## Project structure
 
 ```
 docker-ai2mqtt/
-├── gemini2mqtt.py       # Hauptanwendung
-├── Dockerfile           # Docker-Image (Python + Gemini CLI)
-├── docker-compose.yml   # Compose-Konfiguration
-├── requirements.txt     # Python-Abhängigkeiten
-├── .env.example         # Vorlage für Umgebungsvariablen
+├── gemini2mqtt.py       # Main application
+├── Dockerfile           # Docker image (Python + Gemini CLI)
+├── docker-compose.yml   # Compose configuration
+├── requirements.txt     # Python dependencies
+├── .env.example         # Environment variable template
 ├── .dockerignore
 ├── .gitignore
-└── spec.md              # Projektspezifikation
+└── spec.md              # Project specification
 ```
