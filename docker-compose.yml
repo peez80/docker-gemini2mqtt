@@ -17,10 +17,10 @@ services:
 
       # ── Gemini CLI ─────────────────────────────────────────────────────────
       GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
-      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.5-pro-preview-03-25}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3-flash-preview}"
     # Mount Gemini credentials directory
     volumes:
-      - "${GEMINI_CREDENTIALS_PATH:-/dev/null}:/root/.gemini"
+      - "${GEMINI_CREDENTIALS_PATH:-~/.gemini}:/root/.gemini"
     depends_on:
       - mosquitto
 

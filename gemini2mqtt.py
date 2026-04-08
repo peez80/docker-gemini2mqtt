@@ -38,7 +38,7 @@ MQTT_USERNAME = get_env("MQTT_USERNAME")
 MQTT_PASSWORD = get_env("MQTT_PASSWORD")
 MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
 GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
-GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-2.5-pro-preview-03-25")
+GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
 
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
