@@ -19,6 +19,7 @@ services:
       GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3-flash-preview}"
       GEMINI_MAX_CONCURRENT: "${GEMINI_MAX_CONCURRENT:-2}"
+      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-120}"
     # Mount Gemini credentials directory
     volumes:
       - "${GEMINI_CREDENTIALS_PATH:-~/.gemini}:/root/.gemini"

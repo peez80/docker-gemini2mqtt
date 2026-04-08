@@ -50,6 +50,7 @@ cp .env.example .env
 | `GEMINI_CLI_PATH` | `gemini` | – | Pfad zum Gemini-CLI-Binary |
 | `GEMINI_MODEL` | `gemini-2.5-pro-preview-03-25` | – | Gemini-Modell |
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. gleichzeitige Gemini-Aufrufe |
+| `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout für Gemini-CLI-Aufruf in Sekunden |
 
 ---
 

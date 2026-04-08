@@ -40,6 +40,7 @@ MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=
 GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
 GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
 GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
+GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
@@ -57,14 +58,14 @@ def call_gemini(prompt: str) -> str:
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=GEMINI_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             logger.error("Gemini CLI error (rc=%d): %s", result.returncode, result.stderr.strip())
             return f"ERROR: Gemini CLI returned code {result.returncode}: {result.stderr.strip()}"
         return result.stdout.strip()
     except subprocess.TimeoutExpired:
-        logger.error("Gemini CLI timed out after 120 s")
+        logger.error("Gemini CLI timed out after %d s", GEMINI_TIMEOUT_SECONDS)
         return "ERROR: Gemini CLI timed out."
     except FileNotFoundError as exc:
         logger.error("Gemini CLI not found: %s", exc)
