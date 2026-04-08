@@ -133,7 +133,8 @@ def on_message(client, userdata, msg):
 def _handle_prompt(client, response_topic: str, prompt: str) -> None:
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
     response = call_gemini(prompt)
-    client.publish(response_topic, response)
+    payload = f"{response_topic}|{response}"
+    client.publish(response_topic, payload)
     logger.info("Response published to topic '%s'", response_topic)
 
 

@@ -13,10 +13,12 @@ MQTT Broker
   │       Message format: "response_topic|prompt"
   │
   └─► Topic: <response_topic>    (outgoing)
-          Content: Gemini AI response
+          Message format: "response_topic|gemini_answer"
 ```
 
 ### Message format
+
+#### Incoming (Prompt)
 
 Incoming messages must contain two `|`-separated fields:
 
@@ -28,6 +30,20 @@ Incoming messages must contain two `|`-separated fields:
 **Example:**
 ```
 home/ai/response|What is the capital of Bavaria?
+```
+
+#### Outgoing (Response)
+
+The response is published to `<response_topic>` in the same `|`-separated format:
+
+| Field | Description | Example |
+|---|---|---|
+| `response_topic` | The topic the response was published to | `home/ai/response` |
+| `gemini_answer` | The Gemini AI response text | `The capital of Bavaria is Munich.` |
+
+**Example:**
+```
+home/ai/response|The capital of Bavaria is Munich.
 ```
 
 ---
