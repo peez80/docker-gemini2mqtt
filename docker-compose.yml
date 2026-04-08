@@ -13,7 +13,7 @@ services:
       MQTT_PORT: "${MQTT_PORT:-1883}"
       MQTT_USERNAME: "${MQTT_USERNAME:-}"
       MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
-      MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt}"
+      MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt/#}"
 
       # ── Gemini CLI ─────────────────────────────────────────────────────────
       GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
