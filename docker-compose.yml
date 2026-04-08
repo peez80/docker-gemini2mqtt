@@ -1,8 +1,12 @@
 services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+
   gemini2mqtt:
     build: .
-    image: gemini2mqtt:latest
-    restart: unless-stopped
+    image: peez/gemini2mqtt:latest
     environment:
       # ── MQTT ───────────────────────────────────────────────────────────────
       MQTT_HOST: "${MQTT_HOST:-mosquitto}"
@@ -14,13 +18,9 @@ services:
       # ── Gemini CLI ─────────────────────────────────────────────────────────
       GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.5-pro-preview-03-25}"
-
-      # ── Vertex AI (optional) ───────────────────────────────────────────────
-      VERTEX_CLI_PATH: "${VERTEX_CLI_PATH:-gemini}"
-      VERTEX_PROJECT: "${VERTEX_PROJECT:-}"
-      VERTEX_LOCATION: "${VERTEX_LOCATION:-europe-west3}"
-    # Mount Google Cloud credentials if needed for Vertex AI
+    # Mount Gemini credentials directory
     volumes:
-      - "${GCLOUD_CREDENTIALS_PATH:-/dev/null}:/app/credentials/gcloud.json:ro"
-    env_file:
-      - .env
+      - "${GEMINI_CREDENTIALS_PATH:-/dev/null}:/root/.gemini"
+    depends_on:
+      - mosquitto
+

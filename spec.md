@@ -4,11 +4,10 @@ gemini2mqtt is a tool that receives prompts via MQTT and sends them to Gemini AI
 
 ## Features
 - Receive Messages via MQTT:
-    - Structure of the message: "response_topic|use_vertex_api|prompt"
+    - Structure of the message: "response_topic|prompt"
     - response_topic: The topic to send the response to
-    - use_vertex_api: Whether to use Vertex AI (true/false). In case of false, it uses the common gemini cli to use up the standard gemini AI (pro) quota. In case of true, it uses the vertex ai gemini cli to use up the vertex ai gemini quota, e.g. when the prompt contains sensitive data that might not be used e.g. for model training.
     - prompt: The prompt to send to Gemini AI
-- Send the prompt  to gemini cli - if requested, to the vertex ai, otherwise the standard gemini api.
+- Send the prompt to gemini cli.
 - Send Geminis response back via MQTT to the defined response topic.
 
 

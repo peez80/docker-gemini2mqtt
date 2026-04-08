@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 gemini2mqtt - Receives prompts via MQTT and forwards them to Gemini AI via Gemini CLI.
-Message format: "response_topic|use_vertex_api|prompt"
+Message format: "response_topic|prompt"
 """
 
 import os
@@ -38,20 +38,14 @@ MQTT_USERNAME = get_env("MQTT_USERNAME")
 MQTT_PASSWORD = get_env("MQTT_PASSWORD")
 MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
 GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
-VERTEX_CLI_PATH = get_env("VERTEX_CLI_PATH", "gemini")  # can differ for vertex ai variant
 GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-2.5-pro-preview-03-25")
-VERTEX_PROJECT = get_env("VERTEX_PROJECT")
-VERTEX_LOCATION = get_env("VERTEX_LOCATION", "europe-west3")
 
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
-def call_gemini(prompt: str, use_vertex: bool) -> str:
-    """Invoke the appropriate Gemini CLI and return the text response."""
-    if use_vertex:
-        cmd = build_vertex_command(prompt)
-    else:
-        cmd = build_standard_command(prompt)
+def call_gemini(prompt: str) -> str:
+    """Invoke the Gemini CLI and return the text response."""
+    cmd = build_standard_command(prompt)
 
     logger.debug("Running command: %s", cmd)
     try:
@@ -86,35 +80,20 @@ def build_standard_command(prompt: str) -> list[str]:
     ]
 
 
-def build_vertex_command(prompt: str) -> list[str]:
-    """Build command for the Vertex AI Gemini API."""
-    cmd = [
-        VERTEX_CLI_PATH,
-        "--model", GEMINI_MODEL,
-        "-p", prompt,
-    ]
-    if VERTEX_PROJECT:
-        cmd += ["--project", VERTEX_PROJECT]
-    if VERTEX_LOCATION:
-        cmd += ["--location", VERTEX_LOCATION]
-    return cmd
-
-
 # ── MQTT callbacks ────────────────────────────────────────────────────────────
 
-def parse_message(payload: str) -> tuple[str, bool, str] | None:
+def parse_message(payload: str) -> tuple[str, str] | None:
     """
     Parse the incoming MQTT message.
-    Expected format: "response_topic|use_vertex_api|prompt"
-    Returns (response_topic, use_vertex, prompt) or None on parse error.
+    Expected format: "response_topic|prompt"
+    Returns (response_topic, prompt) or None on parse error.
     """
-    parts = payload.split("|", 2)
-    if len(parts) != 3:
-        logger.warning("Invalid message format (expected 3 pipe-separated fields): %r", payload)
+    parts = payload.split("|", 1)
+    if len(parts) != 2:
+        logger.warning("Invalid message format (expected 2 pipe-separated fields): %r", payload)
         return None
-    response_topic, use_vertex_str, prompt = parts
-    use_vertex = use_vertex_str.strip().lower() in ("true", "1", "yes")
-    return response_topic.strip(), use_vertex, prompt.strip()
+    response_topic, prompt = parts
+    return response_topic.strip(), prompt.strip()
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -140,11 +119,10 @@ def on_message(client, userdata, msg):
     if parsed is None:
         return
 
-    response_topic, use_vertex, prompt = parsed
-    api_label = "Vertex AI" if use_vertex else "Standard Gemini"
-    logger.info("Forwarding prompt to %s (response → '%s')", api_label, response_topic)
+    response_topic, prompt = parsed
+    logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
 
-    response = call_gemini(prompt, use_vertex)
+    response = call_gemini(prompt)
 
     client.publish(response_topic, response)
     logger.info("Response published to topic '%s'", response_topic)
