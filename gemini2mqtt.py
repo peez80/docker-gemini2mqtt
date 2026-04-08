@@ -9,6 +9,7 @@ import subprocess
 import logging
 import signal
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -120,10 +121,16 @@ def on_message(client, userdata, msg):
         return
 
     response_topic, prompt = parsed
+    threading.Thread(
+        target=_handle_prompt,
+        args=(client, response_topic, prompt),
+        daemon=True,
+    ).start()
+
+
+def _handle_prompt(client, response_topic: str, prompt: str) -> None:
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
-
     response = call_gemini(prompt)
-
     client.publish(response_topic, response)
     logger.info("Response published to topic '%s'", response_topic)
 
