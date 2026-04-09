@@ -213,3 +213,42 @@ docker-ai2mqtt/
 ├── .gitignore
 └── spec.md              # Project specification
 ```
+
+---
+
+## Docker Image Versioning
+
+The image `peez/gemini2mqtt` is built automatically on every merge to the `main` branch
+and published to Docker Hub as a multi-arch image (`linux/amd64` & `linux/arm64`).
+
+### Available tags
+
+| Tag | Example | Description |
+|---|---|---|
+| `latest` | `peez/gemini2mqtt:latest` | Always points to the most recent build |
+| `YYYYMMDDhhmm` | `peez/gemini2mqtt:202604091830` | Immutable timestamp snapshot (UTC) |
+
+### Which tag should I use?
+
+- **`latest`** – suitable for private / home-server use when you always want the newest version.
+  Works well in combination with tools like [Watchtower](https://containrrr.dev/watchtower/) for automatic updates.
+- **Timestamp tag** – recommended for production or reproducible deployments where you want to pin
+  a specific, tested version and control updates explicitly.
+
+### Pulling a specific version
+
+```bash
+# Always latest
+docker pull peez/gemini2mqtt:latest
+
+# Specific snapshot
+docker pull peez/gemini2mqtt:202604091830
+```
+
+### Updating
+
+```bash
+# Pull the new image and restart the container
+docker compose pull
+docker compose up -d
+```
