@@ -1,5 +1,13 @@
 # gemini2mqtt
 
+![Docker Image Versioning](https://img.shields.io/badge/docker-image-blue)
+![Multi-Arch](https://img.shields.io/badge/multi--arch-linux%2Farm64-orange)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![MQTT](https://img.shields.io/badge/mqtt-v5-red)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+https://github.com/peez80/docker-gemini2mqtt
+
 > An MQTT-to-Gemini-AI bridge service that receives prompts via MQTT, forwards them to Gemini AI, and publishes the response back via MQTT.
 
 ---
