@@ -68,9 +68,12 @@ cp .env.example .env
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
+| `GEMINI_KEEPALIVE_ENABLED` | `true` | – | Set to `false` to disable the daily Gemini keepalive ping |
 | `GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
 | `GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
 | `VERTEX_CREDENTIAL_FILE` | `~/.gemini_vertex/vertex_key.json` | **Vertex** | Host path to GCP service account key JSON |
+
+> **Note on the keepalive ping:** The service sends a daily dummy prompt to Gemini at noon (UTC) to keep the authentication token alive. This is only needed when using the **standard Gemini CLI** setup, which relies on a refresh token that can expire over time. When using **Vertex AI**, authentication is handled via a service account key that does not expire — the ping is therefore not needed and should be disabled (`GEMINI_KEEPALIVE_ENABLED=false`) to avoid unnecessary API calls and costs. The Vertex AI Compose files set this to `false` by default.
 
 ---
 

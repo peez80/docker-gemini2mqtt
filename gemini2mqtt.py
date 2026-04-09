@@ -53,6 +53,7 @@ GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
 GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
 GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
 GEMINI_RETRY_COUNT     = max(1, int(get_env("GEMINI_RETRY_COUNT", "3")))
+GEMINI_KEEPALIVE_ENABLED = get_env("GEMINI_KEEPALIVE_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
@@ -253,7 +254,11 @@ def main():
     logger.info("Connecting to MQTT broker %s:%d …", MQTT_HOST, MQTT_PORT)
     client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
 
-    threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
+    if GEMINI_KEEPALIVE_ENABLED:
+        threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
+        logger.info("Keepalive ping is ENABLED.")
+    else:
+        logger.info("Keepalive ping is DISABLED (GEMINI_KEEPALIVE_ENABLED=false).")
 
     client.loop_forever()
 
