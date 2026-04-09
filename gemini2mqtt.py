@@ -72,7 +72,15 @@ def call_gemini(prompt: str) -> str:
         if result.returncode != 0:
             logger.error("Gemini CLI error (rc=%d): %s", result.returncode, result.stderr.strip())
             return f"ERROR: Gemini CLI returned code {result.returncode}: {result.stderr.strip()}"
-        return result.stdout.strip()
+
+        response = result.stdout.strip()
+        if not response:
+            stderr_output = result.stderr.strip()
+            error_msg = stderr_output if stderr_output else "Gemini CLI returned an empty response."
+            logger.error("Gemini CLI returned empty stdout. stderr: %s", error_msg)
+            return f"ERROR: {error_msg}"
+
+        return response
     except subprocess.TimeoutExpired:
         logger.error("Gemini CLI timed out after %d s", GEMINI_TIMEOUT_SECONDS)
         return "ERROR: Gemini CLI timed out."
