@@ -67,6 +67,7 @@ cp .env.example .env
 | `GEMINI_MODEL` | `gemini-3-flash-preview` | – | Gemini model |
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
+| `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
 
 ---
 

@@ -15,6 +15,14 @@ import threading
 import time
 from typing import Optional
 
+from tenacity import (
+    retry,
+    retry_if_result,
+    stop_after_attempt,
+    wait_fixed,
+    before_sleep_log,
+)
+
 import paho.mqtt.client as mqtt
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -44,6 +52,7 @@ GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
 GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
 GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
 GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
+GEMINI_RETRY_COUNT     = max(1, int(get_env("GEMINI_RETRY_COUNT", "3")))
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
@@ -56,8 +65,25 @@ _task_id_counter: int = 0
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
+def _on_retry_exhausted(retry_state) -> str:
+    """Called by tenacity when all attempts are exhausted; returns the last error string."""
+    last_result = retry_state.outcome.result()
+    logger.error(
+        "Gemini call failed on all %d attempts. Last error: %s",
+        GEMINI_RETRY_COUNT, last_result,
+    )
+    return last_result
+
+
+@retry(
+    stop=stop_after_attempt(GEMINI_RETRY_COUNT),
+    wait=wait_fixed(5),
+    retry=retry_if_result(lambda r: r.startswith("ERROR:")),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    retry_error_callback=_on_retry_exhausted,
+)
 def call_gemini(prompt: str) -> str:
-    """Invoke the Gemini CLI and return the text response."""
+    """Invoke the Gemini CLI and return the text response (with automatic retry)."""
     cmd = build_standard_command(prompt)
 
     logger.debug("Running command: %s", cmd)
