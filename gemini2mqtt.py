@@ -47,6 +47,12 @@ GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
+# ── Task tracking (thread-safe) ───────────────────────────────────────────────
+_tasks_lock = threading.Lock()
+_pending_count: int = 0        # submitted to executor, not yet started
+_active_tasks: dict[int, float] = {}  # task_id → monotonic start time
+_task_id_counter: int = 0
+
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
@@ -127,15 +133,43 @@ def on_message(client, userdata, msg):
         return
 
     response_topic, prompt = parsed
-    _executor.submit(_handle_prompt, client, response_topic, prompt)
+
+    global _pending_count, _task_id_counter
+    with _tasks_lock:
+        task_id = _task_id_counter
+        _task_id_counter += 1
+        _pending_count += 1
+
+    _executor.submit(_handle_prompt, client, response_topic, prompt, task_id)
 
 
-def _handle_prompt(client, response_topic: str, prompt: str) -> None:
+def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> None:
+    global _pending_count
+    with _tasks_lock:
+        _pending_count -= 1
+        _active_tasks[task_id] = time.monotonic()
+
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
-    response = call_gemini(prompt)
-    payload = f"{response_topic}|{response}"
-    client.publish(response_topic, payload)
-    logger.info("Response published to topic '%s'", response_topic)
+    try:
+        response = call_gemini(prompt)
+        payload = f"{response_topic}|{response}"
+        client.publish(response_topic, payload)
+        logger.info("Response published to topic '%s'", response_topic)
+    finally:
+        now = time.monotonic()
+        with _tasks_lock:
+            _active_tasks.pop(task_id, None)
+            active_durations = [round(now - t) for t in _active_tasks.values()]
+            pending = _pending_count
+
+        if active_durations:
+            durations_str = ", ".join(f"{d}s" for d in active_durations)
+            logger.info(
+                "Queue status: %d active (%s), %d queued",
+                len(active_durations), durations_str, pending,
+            )
+        else:
+            logger.info("Queue status: 0 active, %d queued", pending)
 
 
 # ── Daily keepalive ───────────────────────────────────────────────────────────
