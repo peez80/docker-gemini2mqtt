@@ -68,6 +68,9 @@ cp .env.example .env
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
+| `GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
+| `GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
+| `VERTEX_CREDENTIAL_FILE` | `~/.gemini_vertex/vertex_key.json` | **Vertex** | Host path to GCP service account key JSON |
 
 ---
 
@@ -142,13 +145,68 @@ Mount this directory as a volume in `docker-compose.yml` so the service uses the
 
 ---
 
+## Vertex AI API (Alternative)
+
+### When to use Vertex AI?
+
+| | Standard (Gemini CLI) | Vertex AI |
+|---|---|---|
+| Quick setup | ✅ | — |
+| Free tier / personal use | ✅ | — |
+| Uses your Google account quotas (incl. free quota) | ✅ | — |
+| **Paid API (billing required)** | — | ✅ |
+| Production server / CI | — | ✅ |
+| Data not used for model training | — | ✅ |
+| GDPR / data residency in EU | — | ✅ (region `europe-west4`) |
+| Higher quotas & SLA | — | ✅ |
+
+**Standard mode** authenticates via your Google account and uses its associated
+quotas — including any free tier limits. This is the easiest setup and works well
+for personal or home-server use.
+
+**Vertex AI** is a paid Google Cloud API — billing must be enabled on your GCP project.
+Use it when data privacy is a requirement (requests are not used for training),
+when you need guaranteed quotas beyond the free tier, or when running in a
+production / enterprise environment.
+
+### Prerequisites
+
+1. Create (or reuse) a [GCP project](https://console.cloud.google.com/) with billing enabled
+2. Enable the **Vertex AI API**:
+   ```
+   gcloud services enable aiplatform.googleapis.com --project=<PROJECT_ID>
+   ```
+3. Create a **Service Account** and grant it the `Vertex AI User` role:
+   ```
+   gcloud iam service-accounts create gemini2mqtt \
+     --display-name="gemini2mqtt" --project=<PROJECT_ID>
+
+   gcloud projects add-iam-policy-binding <PROJECT_ID> \
+     --member="serviceAccount:gemini2mqtt@<PROJECT_ID>.iam.gserviceaccount.com" \
+     --role="roles/aiplatform.user"
+   ```
+4. Download the **JSON key**:
+   ```
+   gcloud iam service-accounts keys create vertex_key.json \
+     --iam-account=gemini2mqtt@<PROJECT_ID>.iam.gserviceaccount.com
+   ```
+5. Populate `.env` and start the Vertex AI Compose stack:
+   ```bash
+   cp .env.example .env
+   # Set GOOGLE_CLOUD_PROJECT and VERTEX_CREDENTIAL_FILE
+   docker compose -f docker-compose-vertexapi.yml up -d --build
+   ```
+
+---
+
 ## Project structure
 
 ```
 docker-ai2mqtt/
 ├── gemini2mqtt.py       # Main application
 ├── Dockerfile           # Docker image (Python + Gemini CLI)
-├── docker-compose.yml   # Compose configuration
+├── docker-compose.yml           # Compose configuration (standard / Gemini CLI auth)
+├── docker-compose-vertexapi.yml # Compose configuration (Vertex AI / service account)
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Environment variable template
 ├── .dockerignore

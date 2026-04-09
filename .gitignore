@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .venv/
 .gemini/
+docker-compose-vertexapi_local.yml

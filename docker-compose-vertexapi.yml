@@ -1,0 +1,33 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+
+  gemini2mqtt:
+    build: .
+    image: peez/gemini2mqtt:latest
+    environment:
+      # ── MQTT ───────────────────────────────────────────────────────────────
+      MQTT_HOST: "${MQTT_HOST:-mosquitto}"
+      MQTT_PORT: "${MQTT_PORT:-1883}"
+      MQTT_USERNAME: "${MQTT_USERNAME:-}"
+      MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
+      MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt/#}"
+
+      # ── Gemini CLI ─────────────────────────────────────────────────────────
+      GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3-flash-preview}"
+      GEMINI_MAX_CONCURRENT: "${GEMINI_MAX_CONCURRENT:-2}"
+      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-360}"
+
+      # ── Vertex AI ──────────────────────────────────────────────────────────
+      GOOGLE_GENAI_USE_VERTEXAI: true
+      GOOGLE_APPLICATION_CREDENTIALS: "/mnt/key/key.json"
+      GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:?Variable GOOGLE_CLOUD_PROJECT is required}"
+      GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
+    # Mount Gemini credentials directory
+    volumes:
+      - "${VERTEX_CREDENTIAL_FILE:-~/.gemini_vertex/vertex_key.json}:/mnt/key/key.json"
+    depends_on:
+      - mosquitto
