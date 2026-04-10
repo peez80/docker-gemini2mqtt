@@ -66,72 +66,141 @@ _task_id_counter: int = 0
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
-def _decode_output(data) -> str:
-    """Safely decode subprocess output that may be bytes, str, or None."""
-    if data is None:
-        return ""
-    if isinstance(data, bytes):
-        return data.decode("utf-8", errors="replace")
-    return data
+def _read_stream_live(stream, is_stderr: bool, output_list: list, prefix: str) -> None:
+    """Read a stream line by line, appending to the list and logging immediately."""
+    for line in stream:
+        output_list.append(line)
+        line_clean = line.strip()
+        if line_clean:
+            if is_stderr:
+                logger.warning("%sGemini CLI [stderr]: %s", prefix, line_clean)
+            else:
+                logger.info("%sGemini CLI [stdout]: %s", prefix, line_clean)
 
 
 def _on_retry_exhausted(retry_state) -> str:
     """Called by tenacity when all attempts are exhausted; returns the last error string."""
     last_result = retry_state.outcome.result()
+    log_context = retry_state.kwargs.get("log_context", "")
+    prefix = f"[Topic: {log_context}] " if log_context else ""
     logger.error(
-        "Gemini call failed on all %d attempts. Last error: %s",
-        GEMINI_RETRY_COUNT, last_result,
+        "%sGemini call failed on all %d attempts. Last error: %s",
+        prefix, GEMINI_RETRY_COUNT, last_result,
     )
     return last_result
+
+
+def _before_sleep_custom_log(retry_state) -> None:
+    """Custom logging during Tenacity retries to inject the contextual prefix."""
+    log_context = retry_state.kwargs.get("log_context", "")
+    prefix = f"[Topic: {log_context}] " if log_context else ""
+    error_result = retry_state.outcome.result()
+    
+    logger.warning(
+        "%sRetrying %s in %s seconds as it returned: %s",
+        prefix,
+        retry_state.fn.__name__,
+        retry_state.next_action.sleep,
+        error_result,
+    )
 
 
 @retry(
     stop=stop_after_attempt(GEMINI_RETRY_COUNT),
     wait=wait_fixed(5),
     retry=retry_if_result(lambda r: r.startswith("ERROR:")),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
+    before_sleep=_before_sleep_custom_log,
     retry_error_callback=_on_retry_exhausted,
 )
-def call_gemini(prompt: str) -> str:
+def call_gemini(prompt: str, *, log_context: str = "") -> str:
     """Invoke the Gemini CLI and return the text response (with automatic retry)."""
+    prefix = f"[Topic: {log_context}] " if log_context else ""
     cmd = build_standard_command(prompt)
 
-    logger.debug("Running command: %s", cmd)
+    logger.debug("%sRunning command: %s", prefix, cmd)
     try:
-        result = subprocess.run(
+        with subprocess.Popen(
             cmd,
-            input=prompt,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=GEMINI_TIMEOUT_SECONDS,
-        )
-        if result.returncode != 0:
-            logger.error("Gemini CLI error (rc=%d): %s", result.returncode, result.stderr.strip())
-            return f"ERROR: Gemini CLI returned code {result.returncode}: {result.stderr.strip()}"
+            bufsize=1,
+        ) as process:
 
-        response = result.stdout.strip()
-        if not response:
-            stderr_output = result.stderr.strip()
-            error_msg = stderr_output if stderr_output else "Gemini CLI returned an empty response."
-            logger.error("Gemini CLI returned empty stdout. stderr: %s", error_msg)
-            return f"ERROR: {error_msg}"
+            stdout_lines: list = []
+            stderr_lines: list = []
 
-        return response
-    except subprocess.TimeoutExpired as exc:
-        stdout_so_far = _decode_output(exc.stdout).strip()
-        stderr_so_far = _decode_output(exc.stderr).strip()
-        logger.error(
-            "Gemini CLI timed out after %d s.\n  stdout so far: %s\n  stderr so far: %s",
-            GEMINI_TIMEOUT_SECONDS,
-            stdout_so_far if stdout_so_far else "<empty>",
-            stderr_so_far if stderr_so_far else "<empty>",
-        )
-        return "ERROR: Gemini CLI timed out."
+            t_out = threading.Thread(
+                target=_read_stream_live,
+                args=(process.stdout, False, stdout_lines, prefix),
+                daemon=True,
+                name="gemini-stdout-reader"
+            )
+            t_err = threading.Thread(
+                target=_read_stream_live,
+                args=(process.stderr, True, stderr_lines, prefix),
+                daemon=True,
+                name="gemini-stderr-reader"
+            )
+
+            t_out.start()
+            t_err.start()
+
+            # Pass the prompt to the CLI
+            if prompt and process.stdin:
+                process.stdin.write(prompt)
+                process.stdin.close()  # VERY IMPORTANT to avoid deadlocks
+
+            try:
+                # Wait for the process to finish on its own within the timeout
+                returncode = process.wait(timeout=GEMINI_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                # Kill the hung process. This will close files and cause EOF in threads.
+                logger.warning("%sTimeout reached (%d s). Killing process...", prefix, GEMINI_TIMEOUT_SECONDS)
+                process.kill()
+                # Wait briefly for process to actually terminate
+                process.wait()
+
+                # Cleanly wait for threads to exit (they will get EOF)
+                t_out.join(timeout=1.0)
+                t_err.join(timeout=1.0)
+
+                stdout_so_far = "".join(stdout_lines).strip()
+                stderr_so_far = "".join(stderr_lines).strip()
+
+                logger.error(
+                    "%sGemini CLI timed out after %d s.\n  stdout so far: %s\n  stderr so far: %s",
+                    prefix,
+                    GEMINI_TIMEOUT_SECONDS,
+                    stdout_so_far if stdout_so_far else "<empty>",
+                    stderr_so_far if stderr_so_far else "<empty>",
+                )
+                return "ERROR: Gemini CLI timed out."
+
+            # Process finished normally
+            t_out.join()
+            t_err.join()
+
+            stdout_output = "".join(stdout_lines).strip()
+            stderr_output = "".join(stderr_lines).strip()
+
+            if returncode != 0:
+                logger.error("%sGemini CLI error (rc=%d): %s", prefix, returncode, stderr_output)
+                return f"ERROR: Gemini CLI returned code {returncode}: {stderr_output}"
+
+            if not stdout_output:
+                error_msg = stderr_output if stderr_output else "Gemini CLI returned an empty response."
+                logger.error("%sGemini CLI returned empty stdout. stderr: %s", prefix, error_msg)
+                return f"ERROR: {error_msg}"
+
+            return stdout_output
+
     except FileNotFoundError as exc:
-        logger.error("Gemini CLI not found: %s", exc)
+        logger.error("%sGemini CLI not found: %s", prefix, exc)
         return f"ERROR: Gemini CLI not found: {exc}"
     except Exception as exc:  # pylint: disable=broad-except
-        logger.exception("Unexpected error calling Gemini CLI")
+        logger.exception("%sUnexpected error calling Gemini CLI", prefix)
         return f"ERROR: {exc}"
 
 
@@ -202,7 +271,7 @@ def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> No
 
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
     try:
-        response = call_gemini(prompt)
+        response = call_gemini(prompt, log_context=response_topic)
         payload = f"{response_topic}|{response}"
         client.publish(response_topic, payload)
         logger.info("Response published to topic '%s'", response_topic)
@@ -240,7 +309,7 @@ def _keepalive_loop() -> None:
         )
         time.sleep(sleep_seconds)
         logger.info("Keepalive: sending daily Gemini ping…")
-        response = call_gemini("ping")
+        response = call_gemini("ping", log_context="keepalive")
         logger.info("Keepalive: Gemini ping done: %s", response)
 
 
