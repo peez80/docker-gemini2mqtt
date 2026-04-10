@@ -66,6 +66,15 @@ _task_id_counter: int = 0
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
+def _decode_output(data) -> str:
+    """Safely decode subprocess output that may be bytes, str, or None."""
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
+
+
 def _on_retry_exhausted(retry_state) -> str:
     """Called by tenacity when all attempts are exhausted; returns the last error string."""
     last_result = retry_state.outcome.result()
@@ -108,8 +117,15 @@ def call_gemini(prompt: str) -> str:
             return f"ERROR: {error_msg}"
 
         return response
-    except subprocess.TimeoutExpired:
-        logger.error("Gemini CLI timed out after %d s", GEMINI_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        stdout_so_far = _decode_output(exc.stdout).strip()
+        stderr_so_far = _decode_output(exc.stderr).strip()
+        logger.error(
+            "Gemini CLI timed out after %d s.\n  stdout so far: %s\n  stderr so far: %s",
+            GEMINI_TIMEOUT_SECONDS,
+            stdout_so_far if stdout_so_far else "<empty>",
+            stderr_so_far if stderr_so_far else "<empty>",
+        )
         return "ERROR: Gemini CLI timed out."
     except FileNotFoundError as exc:
         logger.error("Gemini CLI not found: %s", exc)
