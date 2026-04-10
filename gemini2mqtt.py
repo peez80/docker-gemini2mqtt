@@ -49,7 +49,7 @@ MQTT_USERNAME = get_env("MQTT_USERNAME")
 MQTT_PASSWORD = get_env("MQTT_PASSWORD")
 MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
 GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
-GEMINI_MODEL = get_env("GEMINI_MODEL", "gemini-3-flash-preview")
+GEMINI_MODEL = get_env("GEMINI_MODEL")
 GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
 GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
 GEMINI_RETRY_COUNT     = max(1, int(get_env("GEMINI_RETRY_COUNT", "3")))
@@ -137,11 +137,11 @@ def call_gemini(prompt: str) -> str:
 
 def build_standard_command(prompt: str) -> list[str]:
     """Build command for the standard Gemini API."""
-    return [
-        GEMINI_CLI_PATH,
-        "--model", GEMINI_MODEL,
-        "-p", prompt,
-    ]
+    cmd = [GEMINI_CLI_PATH]
+    if GEMINI_MODEL:
+        cmd.extend(["--model", GEMINI_MODEL])
+    cmd.extend(["-p", prompt])
+    return cmd
 
 
 # ── MQTT callbacks ────────────────────────────────────────────────────────────

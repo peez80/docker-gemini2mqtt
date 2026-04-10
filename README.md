@@ -72,7 +72,7 @@ cp .env.example .env
 | `MQTT_PASSWORD` | – | – | MQTT password |
 | `MQTT_PROMPT_TOPIC` | `gemini2mqtt/prompt` | **Yes** | Topic for incoming prompts |
 | `GEMINI_CLI_PATH` | `gemini` | – | Path to the Gemini CLI binary |
-| `GEMINI_MODEL` | `gemini-3-flash-preview` | – | Gemini model |
+| `GEMINI_MODEL` | – | – | Gemini model (if unset, `--model` flag is omitted) |
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
