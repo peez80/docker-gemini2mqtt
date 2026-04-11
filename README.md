@@ -66,6 +66,7 @@ cp .env.example .env
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
+| `LOG_LEVEL` | `INFO` | – | Application log level (`DEBUG` to see Gemini live stream) |
 | `MQTT_HOST` | `localhost` | – | MQTT broker hostname |
 | `MQTT_PORT` | `1883` | – | MQTT broker port |
 | `MQTT_USERNAME` | – | – | MQTT username |

@@ -26,8 +26,11 @@ from tenacity import (
 import paho.mqtt.client as mqtt
 
 # ── Logging ──────────────────────────────────────────────────────────────────
+log_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -73,9 +76,9 @@ def _read_stream_live(stream, is_stderr: bool, output_list: list, prefix: str) -
         line_clean = line.strip()
         if line_clean:
             if is_stderr:
-                logger.warning("%sGemini CLI [stderr]: %s", prefix, line_clean)
+                logger.debug("%sGemini CLI [stderr]: %s", prefix, line_clean)
             else:
-                logger.info("%sGemini CLI [stdout]: %s", prefix, line_clean)
+                logger.debug("%sGemini CLI [stdout]: %s", prefix, line_clean)
 
 
 def _on_retry_exhausted(retry_state) -> str:
@@ -186,12 +189,22 @@ def call_gemini(prompt: str, *, log_context: str = "") -> str:
             stderr_output = "".join(stderr_lines).strip()
 
             if returncode != 0:
-                logger.error("%sGemini CLI error (rc=%d): %s", prefix, returncode, stderr_output)
+                logger.error(
+                    "%sGemini CLI error (rc=%d).\n  stdout so far: %s\n  stderr so far: %s",
+                    prefix,
+                    returncode,
+                    stdout_output if stdout_output else "<empty>",
+                    stderr_output if stderr_output else "<empty>",
+                )
                 return f"ERROR: Gemini CLI returned code {returncode}: {stderr_output}"
 
             if not stdout_output:
                 error_msg = stderr_output if stderr_output else "Gemini CLI returned an empty response."
-                logger.error("%sGemini CLI returned empty stdout. stderr: %s", prefix, error_msg)
+                logger.error(
+                    "%sGemini CLI returned empty stdout.\n  stdout so far: <empty>\n  stderr so far: %s",
+                    prefix,
+                    stderr_output if stderr_output else "<empty>",
+                )
                 return f"ERROR: {error_msg}"
 
             return stdout_output
