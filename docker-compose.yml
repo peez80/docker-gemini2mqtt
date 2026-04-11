@@ -8,6 +8,9 @@ services:
     build: .
     image: peez/gemini2mqtt:latest
     environment:
+      # -- LOG --
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
       # ── MQTT ───────────────────────────────────────────────────────────────
       MQTT_HOST: "${MQTT_HOST:-mosquitto}"
       MQTT_PORT: "${MQTT_PORT:-1883}"
