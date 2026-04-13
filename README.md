@@ -78,6 +78,7 @@ cp .env.example .env
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
 | `GEMINI_KEEPALIVE_ENABLED` | `true` | – | Set to `false` to disable the daily Gemini keepalive ping |
+| `GEMINI_API_KEY` | – | – | When using API-Key to authenticate. Gemini API key |
 | `GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
 | `GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
 | `VERTEX_CREDENTIAL_FILE` | `~/.gemini_vertex/vertex_key.json` | **Vertex** | Host path to GCP service account key JSON |
@@ -157,7 +158,7 @@ Mount this directory as a volume in `docker-compose.yml` so the service uses the
 
 ---
 
-## Vertex AI API (Alternative)
+## Authentication (Vertex AI API) (Alternative)
 
 ### When to use Vertex AI?
 
@@ -208,6 +209,13 @@ production / enterprise environment.
    # Set GOOGLE_CLOUD_PROJECT and VERTEX_CREDENTIAL_FILE
    docker compose -f docker-compose-vertexapi.yml up -d --build
    ```
+## Authentication (API Key)
+
+```bash
+cp .env.example .env
+# Set GEMINI_API_KEY and GEMINI_MODEL
+docker compose up -d --build
+```
 
 ---
 
