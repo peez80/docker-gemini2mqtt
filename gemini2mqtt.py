@@ -289,20 +289,37 @@ def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> No
         client.publish(response_topic, payload)
         logger.info("Response published to topic '%s'", response_topic)
     finally:
-        now = time.monotonic()
         with _tasks_lock:
             _active_tasks.pop(task_id, None)
+
+
+# ── Queue status logger ───────────────────────────────────────────────────────
+
+QUEUE_STATUS_INTERVAL = 30  # seconds
+
+
+def _queue_status_loop() -> None:
+    """Log queue status every 30 s while tasks are active or pending.
+    Logs once more when the queue becomes empty."""
+    was_busy = False
+    while True:
+        time.sleep(QUEUE_STATUS_INTERVAL)
+        now = time.monotonic()
+        with _tasks_lock:
             active_durations = [round(now - t) for t in _active_tasks.values()]
             pending = _pending_count
 
-        if active_durations:
+        is_busy = bool(active_durations) or pending > 0
+        if is_busy:
             durations_str = ", ".join(f"{d}s" for d in active_durations)
             logger.info(
                 "Queue status: %d active (%s), %d queued",
                 len(active_durations), durations_str, pending,
             )
-        else:
-            logger.info("Queue status: 0 active, %d queued", pending)
+            was_busy = True
+        elif was_busy:
+            logger.info("Queue status: 0 active, 0 queued (queue empty)")
+            was_busy = False
 
 
 # ── Daily keepalive ───────────────────────────────────────────────────────────
@@ -351,6 +368,8 @@ def main():
 
     logger.info("Connecting to MQTT broker %s:%d …", MQTT_HOST, MQTT_PORT)
     client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+
+    threading.Thread(target=_queue_status_loop, daemon=True, name="queue-status").start()
 
     if GEMINI_KEEPALIVE_ENABLED:
         threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
