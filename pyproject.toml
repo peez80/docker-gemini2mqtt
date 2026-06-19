@@ -1,0 +1,23 @@
+[project]
+name = "docker-ai2mqtt"
+version = "1.0.0"
+description = "Bridge between MQTT and Google Gemini API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=0.2.0",
+    "paho-mqtt>=2.1.0",
+    "tenacity>=8.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "testcontainers>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+pythonpath = ["."]

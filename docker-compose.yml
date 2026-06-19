@@ -18,14 +18,10 @@ services:
       MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
       MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt/#}"
 
-      # ── Gemini CLI ─────────────────────────────────────────────────────────
-      GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
+      # ── Gemini API ─────────────────────────────────────────────────────────
+      GEMINI_API_KEY: "${GEMINI_API_KEY?Variable GEMINI_API_KEY is required}"
       GEMINI_MODEL: "${GEMINI_MODEL-}"
       GEMINI_MAX_CONCURRENT: "${GEMINI_MAX_CONCURRENT:-2}"
-      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-360}"
-      GEMINI_KEEPALIVE_ENABLED: "${GEMINI_KEEPALIVE_ENABLED:-true}"
-    # Mount Gemini credentials directory
-    volumes:
-      - "${GEMINI_CREDENTIALS_PATH:-~/.gemini}:/root/.gemini"
+      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-120}"
     depends_on:
       - mosquitto

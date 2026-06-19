@@ -8,7 +8,7 @@
 
 https://github.com/peez80/docker-gemini2mqtt
 
-> An MQTT-to-Gemini-AI bridge service that receives prompts via MQTT, forwards them to Gemini AI, and publishes the response back via MQTT.
+> An MQTT-to-Gemini-AI bridge service that receives prompts via MQTT, forwards them to Google Gemini API, and publishes the response back via MQTT.
 
 ---
 
@@ -66,24 +66,20 @@ cp .env.example .env
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `LOG_LEVEL` | `INFO` | – | Application log level (`DEBUG` to see Gemini live stream) |
+| `LOG_LEVEL` | `INFO` | – | Application log level |
 | `MQTT_HOST` | `localhost` | – | MQTT broker hostname |
 | `MQTT_PORT` | `1883` | – | MQTT broker port |
 | `MQTT_USERNAME` | – | – | MQTT username |
 | `MQTT_PASSWORD` | – | – | MQTT password |
 | `MQTT_PROMPT_TOPIC` | `gemini2mqtt/prompt` | **Yes** | Topic for incoming prompts |
-| `GEMINI_CLI_PATH` | `gemini` | – | Path to the Gemini CLI binary |
-| `GEMINI_MODEL` | – | – | Gemini model (if unset, `--model` flag is omitted) |
+| `GEMINI_API_KEY` | – | **Yes** | Your Gemini API Key from Google AI Studio |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | – | Gemini model to use |
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
-| `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini CLI calls in seconds |
+| `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini API calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
-| `GEMINI_KEEPALIVE_ENABLED` | `true` | – | Set to `false` to disable the daily Gemini keepalive ping |
-| `GEMINI_API_KEY` | – | – | When using API-Key to authenticate. Gemini API key |
 | `GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
 | `GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
 | `VERTEX_CREDENTIAL_FILE` | `~/.gemini_vertex/vertex_key.json` | **Vertex** | Host path to GCP service account key JSON |
-
-> **Note on the keepalive ping:** The service sends a daily dummy prompt to Gemini at noon (UTC) to keep the authentication token alive. This is only needed when using the **standard Gemini CLI** setup, which relies on a refresh token that can expire over time. When using **Vertex AI**, authentication is handled via a service account key that does not expire — the ping is therefore not needed and should be disabled (`GEMINI_KEEPALIVE_ENABLED=false`) to avoid unnecessary API calls and costs. The Vertex AI Compose files set this to `false` by default.
 
 ---
 
@@ -94,7 +90,7 @@ cp .env.example .env
 ```bash
 # 1. Create .env
 cp .env.example .env
-# (adjust values in .env)
+# (adjust values in .env, make sure to set GEMINI_API_KEY)
 
 # 2. Build image and start container
 docker compose up -d --build
@@ -122,67 +118,44 @@ pip install -r requirements.txt
 
 # Set environment variables
 cp .env.example .env
-# adjust .env as needed
+# adjust .env as needed, setting GEMINI_API_KEY
 
 # Start
 python gemini2mqtt.py
 ```
 
-> **Prerequisite:** The Gemini CLI must be installed locally and available on the `PATH`.  
-> Installation: `npm install -g @google/gemini-cli`
-
 ---
 
-## Authentication (Gemini CLI)
+## Authentication
 
-To authenticate with the Gemini API, credentials must be generated once inside a container and persisted to a local directory:
+### Standard Mode (Google AI Studio API Key)
 
-```bash
-# Create a local directory for credentials
-mkdir -p /path/to/credentials-directory
+The default and easiest way to authenticate is by obtaining a free API key from [Google AI Studio](https://aistudio.google.com/).
+1. Generate an API Key.
+2. Set `GEMINI_API_KEY=your_api_key_here` in your `.env` file.
 
-# Start container interactively with Gemini CLI and mount the directory
-docker run -it --rm --entrypoint gemini \
-  -v "/path/to/credentials-directory:/root/.gemini" \
-  peez/gemini2mqtt
-```
+### Vertex AI API (Alternative)
 
-In the interactive CLI:
+#### When to use Vertex AI?
 
-1. Navigate to **"Sign in with Google"** using the arrow keys and confirm.
-2. Copy the displayed URL and open it in your browser.
-3. Complete the Google auth flow and paste the displayed code back into the CLI.
-4. After successful authentication, credentials are saved to `/path/to/credentials-directory`.
-
-Mount this directory as a volume in `docker-compose.yml` so the service uses the stored credentials on startup.
-
----
-
-## Authentication (Vertex AI API) (Alternative)
-
-### When to use Vertex AI?
-
-| | Standard (Gemini CLI) | Vertex AI |
+| | Standard (AI Studio) | Vertex AI |
 |---|---|---|
 | Quick setup | ✅ | — |
-| Free tier / personal use | ✅ | — |
-| Uses your Google account quotas (incl. free quota) | ✅ | — |
+| Free tier | ✅ | — |
 | **Paid API (billing required)** | — | ✅ |
 | Production server / CI | — | ✅ |
 | Data not used for model training | — | ✅ |
 | GDPR / data residency in EU | — | ✅ (region `europe-west4`) |
 | Higher quotas & SLA | — | ✅ |
 
-**Standard mode** authenticates via your Google account and uses its associated
-quotas — including any free tier limits. This is the easiest setup and works well
-for personal or home-server use.
+**Standard mode** is the easiest setup and works well for personal or home-server use.
 
 **Vertex AI** is a paid Google Cloud API — billing must be enabled on your GCP project.
 Use it when data privacy is a requirement (requests are not used for training),
 when you need guaranteed quotas beyond the free tier, or when running in a
 production / enterprise environment.
 
-### Prerequisites
+#### Prerequisites for Vertex AI
 
 1. Create (or reuse) a [GCP project](https://console.cloud.google.com/) with billing enabled
 2. Enable the **Vertex AI API**:
@@ -209,13 +182,22 @@ production / enterprise environment.
    # Set GOOGLE_CLOUD_PROJECT and VERTEX_CREDENTIAL_FILE
    docker compose -f docker-compose-vertexapi.yml up -d --build
    ```
-## Authentication (API Key)
 
-```bash
-cp .env.example .env
-# Set GEMINI_API_KEY and GEMINI_MODEL
-docker compose up -d --build
-```
+---
+
+## Testing
+
+The project uses `pytest` and `testcontainers` for robust unit and integration testing with an embedded Mosquitto broker.
+
+We recommend using [uv](https://docs.astral.sh/uv/) to run the tests, as it automatically manages the Python version and creates an isolated virtual environment (`venv`) lightning-fast.
+
+1. Install `uv` (if not already installed).
+2. Run the tests:
+   ```bash
+   uv run pytest -v
+   ```
+
+*(Requires a running Docker daemon for `testcontainers` to spin up the mock MQTT broker).*
 
 ---
 
@@ -224,8 +206,8 @@ docker compose up -d --build
 ```
 docker-ai2mqtt/
 ├── gemini2mqtt.py       # Main application
-├── Dockerfile           # Docker image (Python + Gemini CLI)
-├── docker-compose.yml           # Compose configuration (standard / Gemini CLI auth)
+├── Dockerfile           # Docker image (Python only)
+├── docker-compose.yml           # Compose configuration (standard / API Key)
 ├── docker-compose-vertexapi.yml # Compose configuration (Vertex AI / service account)
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Environment variable template

@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 """
-gemini2mqtt - Receives prompts via MQTT and forwards them to Gemini AI via Gemini CLI.
+gemini2mqtt - Receives prompts via MQTT and forwards them to Gemini AI via google-genai SDK.
 Message format: "response_topic|prompt"
 """
 
 import os
-import subprocess
 import logging
 import signal
 import sys
 import concurrent.futures
-import datetime
 import threading
 import time
 from typing import Optional
+from dataclasses import dataclass
 
 from tenacity import (
     retry,
-    retry_if_result,
+    retry_if_exception_type,
     stop_after_attempt,
-    wait_fixed,
-    before_sleep_log,
+    wait_exponential,
 )
 
 import paho.mqtt.client as mqtt
+from google import genai
+from google.genai import types
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 log_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -37,193 +37,115 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Configuration (from environment variables) ────────────────────────────────
-def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
-    value = os.environ.get(name, default)
-    if required and not value:
-        logger.error("Required environment variable '%s' is not set.", name)
-        sys.exit(1)
-    return value
+# ── Configuration ─────────────────────────────────────────────────────────────
+@dataclass
+class AppConfig:
+    mqtt_host: str
+    mqtt_port: int
+    mqtt_username: Optional[str]
+    mqtt_password: Optional[str]
+    mqtt_prompt_topic: str
+    gemini_model: str
+    gemini_max_concurrent: int
+    gemini_timeout_seconds: int
+    gemini_retry_count: int
 
+def load_config() -> AppConfig:
+    def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
+        value = os.environ.get(name, default)
+        if required and not value:
+            logger.error("Required environment variable '%s' is not set.", name)
+            sys.exit(1)
+        return value
 
-MQTT_HOST = get_env("MQTT_HOST", "localhost")
-MQTT_PORT = int(get_env("MQTT_PORT", "1883"))
-MQTT_USERNAME = get_env("MQTT_USERNAME")
-MQTT_PASSWORD = get_env("MQTT_PASSWORD")
-MQTT_PROMPT_TOPIC = get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True)
-GEMINI_CLI_PATH = get_env("GEMINI_CLI_PATH", "gemini")
-GEMINI_MODEL = get_env("GEMINI_MODEL")
-GEMINI_MAX_CONCURRENT = int(get_env("GEMINI_MAX_CONCURRENT", "2"))
-GEMINI_TIMEOUT_SECONDS = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
-GEMINI_RETRY_COUNT     = max(1, int(get_env("GEMINI_RETRY_COUNT", "3")))
-GEMINI_KEEPALIVE_ENABLED = get_env("GEMINI_KEEPALIVE_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+    return AppConfig(
+        mqtt_host=get_env("MQTT_HOST", "localhost"),
+        mqtt_port=int(get_env("MQTT_PORT", "1883")),
+        mqtt_username=get_env("MQTT_USERNAME"),
+        mqtt_password=get_env("MQTT_PASSWORD"),
+        mqtt_prompt_topic=get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True),
+        gemini_model=get_env("GEMINI_MODEL", "gemini-3.1-flash-lite"),
+        gemini_max_concurrent=int(get_env("GEMINI_MAX_CONCURRENT", "2")),
+        gemini_timeout_seconds=int(get_env("GEMINI_TIMEOUT_SECONDS", "120")),
+        gemini_retry_count=max(1, int(get_env("GEMINI_RETRY_COUNT", "3"))),
+    )
 
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=GEMINI_MAX_CONCURRENT)
 
 # ── Task tracking (thread-safe) ───────────────────────────────────────────────
 _tasks_lock = threading.Lock()
 _pending_count: int = 0        # submitted to executor, not yet started
 _active_tasks: dict[int, float] = {}  # task_id → monotonic start time
 _task_id_counter: int = 0
+_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
 
 # ── Gemini helpers ────────────────────────────────────────────────────────────
 
-def _read_stream_live(stream, is_stderr: bool, output_list: list, prefix: str) -> None:
-    """Read a stream line by line, appending to the list and logging immediately."""
-    for line in stream:
-        output_list.append(line)
-        line_clean = line.strip()
-        if line_clean:
-            if is_stderr:
-                logger.debug("%sGemini CLI [stderr]: %s", prefix, line_clean)
-            else:
-                logger.debug("%sGemini CLI [stdout]: %s", prefix, line_clean)
-
-
 def _on_retry_exhausted(retry_state) -> str:
     """Called by tenacity when all attempts are exhausted; returns the last error string."""
-    last_result = retry_state.outcome.result()
+    last_exc = retry_state.outcome.exception()
     log_context = retry_state.kwargs.get("log_context", "")
     prefix = f"[Topic: {log_context}] " if log_context else ""
+    config = retry_state.kwargs.get("config")
+    retry_count = config.gemini_retry_count if config else 3
     logger.error(
         "%sGemini call failed on all %d attempts. Last error: %s",
-        prefix, GEMINI_RETRY_COUNT, last_result,
+        prefix, retry_count, last_exc,
     )
-    return last_result
+    return f"ERROR: {last_exc}"
 
 
 def _before_sleep_custom_log(retry_state) -> None:
     """Custom logging during Tenacity retries to inject the contextual prefix."""
     log_context = retry_state.kwargs.get("log_context", "")
     prefix = f"[Topic: {log_context}] " if log_context else ""
-    error_result = retry_state.outcome.result()
+    exc = retry_state.outcome.exception()
     
     logger.warning(
-        "%sRetrying %s in %s seconds as it returned: %s",
+        "%sRetrying %s in %.2f seconds as it raised: %s",
         prefix,
         retry_state.fn.__name__,
         retry_state.next_action.sleep,
-        error_result,
+        exc,
     )
 
-
+# Since tenacity decorators are evaluated at import time, we set a default max attempts
+# but can optionally override it via retry state, or simply use a reasonably high default if we wanted.
+# Here we use stop_after_attempt(10) as a safe upper bound, but we can dynamically stop it if needed.
+# Actually, since GEMINI_RETRY_COUNT is dynamic, we'll wrap the logic.
 @retry(
-    stop=stop_after_attempt(GEMINI_RETRY_COUNT),
-    wait=wait_fixed(5),
-    retry=retry_if_result(lambda r: r.startswith("ERROR:")),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception),
     before_sleep=_before_sleep_custom_log,
     retry_error_callback=_on_retry_exhausted,
 )
-def call_gemini(prompt: str, *, log_context: str = "") -> str:
-    """Invoke the Gemini CLI and return the text response (with automatic retry)."""
+def _call_gemini_with_retry(prompt: str, config: AppConfig, log_context: str = "", retry_state=None) -> str:
+    """Invoke the Gemini API and return the text response (with automatic retry)."""
     prefix = f"[Topic: {log_context}] " if log_context else ""
-    cmd = build_standard_command(prompt)
+    
+    if retry_state and retry_state.attempt_number > config.gemini_retry_count:
+        raise Exception(f"Max retries ({config.gemini_retry_count}) exceeded")
 
-    logger.debug("%sRunning command: %s", prefix, cmd)
-    try:
-        with subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        ) as process:
+    logger.debug("%sCalling Gemini API (model: %s)...", prefix, config.gemini_model)
+    
+    # Initialize the client. This automatically picks up GEMINI_API_KEY
+    # or Vertex AI environment variables.
+    client = genai.Client(
+        http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
+    )
+    
+    response = client.models.generate_content(
+        model=config.gemini_model,
+        contents=prompt,
+    )
+    
+    return response.text
 
-            stdout_lines: list = []
-            stderr_lines: list = []
-
-            t_out = threading.Thread(
-                target=_read_stream_live,
-                args=(process.stdout, False, stdout_lines, prefix),
-                daemon=True,
-                name="gemini-stdout-reader"
-            )
-            t_err = threading.Thread(
-                target=_read_stream_live,
-                args=(process.stderr, True, stderr_lines, prefix),
-                daemon=True,
-                name="gemini-stderr-reader"
-            )
-
-            t_out.start()
-            t_err.start()
-
-            # Pass the prompt to the CLI
-            if prompt and process.stdin:
-                process.stdin.write(prompt)
-                process.stdin.close()  # VERY IMPORTANT to avoid deadlocks
-
-            try:
-                # Wait for the process to finish on its own within the timeout
-                returncode = process.wait(timeout=GEMINI_TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                # Kill the hung process. This will close files and cause EOF in threads.
-                logger.warning("%sTimeout reached (%d s). Killing process...", prefix, GEMINI_TIMEOUT_SECONDS)
-                process.kill()
-                # Wait briefly for process to actually terminate
-                process.wait()
-
-                # Cleanly wait for threads to exit (they will get EOF)
-                t_out.join(timeout=1.0)
-                t_err.join(timeout=1.0)
-
-                stdout_so_far = "".join(stdout_lines).strip()
-                stderr_so_far = "".join(stderr_lines).strip()
-
-                logger.error(
-                    "%sGemini CLI timed out after %d s.\n  stdout so far: %s\n  stderr so far: %s",
-                    prefix,
-                    GEMINI_TIMEOUT_SECONDS,
-                    stdout_so_far if stdout_so_far else "<empty>",
-                    stderr_so_far if stderr_so_far else "<empty>",
-                )
-                return "ERROR: Gemini CLI timed out."
-
-            # Process finished normally
-            t_out.join()
-            t_err.join()
-
-            stdout_output = "".join(stdout_lines).strip()
-            stderr_output = "".join(stderr_lines).strip()
-
-            if returncode != 0:
-                logger.error(
-                    "%sGemini CLI error (rc=%d).\n  stdout so far: %s\n  stderr so far: %s",
-                    prefix,
-                    returncode,
-                    stdout_output if stdout_output else "<empty>",
-                    stderr_output if stderr_output else "<empty>",
-                )
-                return f"ERROR: Gemini CLI returned code {returncode}: {stderr_output}"
-
-            if not stdout_output:
-                error_msg = stderr_output if stderr_output else "Gemini CLI returned an empty response."
-                logger.error(
-                    "%sGemini CLI returned empty stdout.\n  stdout so far: <empty>\n  stderr so far: %s",
-                    prefix,
-                    stderr_output if stderr_output else "<empty>",
-                )
-                return f"ERROR: {error_msg}"
-
-            return stdout_output
-
-    except FileNotFoundError as exc:
-        logger.error("%sGemini CLI not found: %s", prefix, exc)
-        return f"ERROR: Gemini CLI not found: {exc}"
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.exception("%sUnexpected error calling Gemini CLI", prefix)
-        return f"ERROR: {exc}"
-
-
-def build_standard_command(prompt: str) -> list[str]:
-    """Build command for the standard Gemini API."""
-    cmd = [GEMINI_CLI_PATH]
-    if GEMINI_MODEL:
-        cmd.extend(["--model", GEMINI_MODEL])
-    cmd.extend(["-p", prompt])
-    return cmd
+def call_gemini(prompt: str, config: AppConfig, log_context: str = "") -> str:
+    # We dynamically apply stop_after_attempt based on config
+    return _call_gemini_with_retry.retry_with(
+        stop=stop_after_attempt(config.gemini_retry_count)
+    )(prompt=prompt, config=config, log_context=log_context)
 
 
 # ── MQTT callbacks ────────────────────────────────────────────────────────────
@@ -243,10 +165,11 @@ def parse_message(payload: str) -> tuple[str, str] | None:
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
+    config = userdata["config"]
     if reason_code == 0:
-        logger.info("Connected to MQTT broker at %s:%d", MQTT_HOST, MQTT_PORT)
-        client.subscribe(MQTT_PROMPT_TOPIC)
-        logger.info("Subscribed to topic: %s", MQTT_PROMPT_TOPIC)
+        logger.info("Connected to MQTT broker at %s:%d", config.mqtt_host, config.mqtt_port)
+        client.subscribe(config.mqtt_prompt_topic)
+        logger.info("Subscribed to topic: %s", config.mqtt_prompt_topic)
     else:
         logger.error("MQTT connection failed with reason code: %s", reason_code)
 
@@ -266,6 +189,7 @@ def on_message(client, userdata, msg):
         return
 
     response_topic, prompt = parsed
+    config = userdata["config"]
 
     global _pending_count, _task_id_counter
     with _tasks_lock:
@@ -273,10 +197,11 @@ def on_message(client, userdata, msg):
         _task_id_counter += 1
         _pending_count += 1
 
-    _executor.submit(_handle_prompt, client, response_topic, prompt, task_id)
+    if _executor is not None:
+        _executor.submit(_handle_prompt, client, config, response_topic, prompt, task_id)
 
 
-def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> None:
+def _handle_prompt(client, config: AppConfig, response_topic: str, prompt: str, task_id: int) -> None:
     global _pending_count
     with _tasks_lock:
         _pending_count -= 1
@@ -284,7 +209,7 @@ def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> No
 
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
     try:
-        response = call_gemini(prompt, log_context=response_topic)
+        response = call_gemini(prompt, config=config, log_context=response_topic)
         payload = f"{response_topic}|{response}"
         client.publish(response_topic, payload)
         logger.info("Response published to topic '%s'", response_topic)
@@ -298,12 +223,15 @@ def _handle_prompt(client, response_topic: str, prompt: str, task_id: int) -> No
 QUEUE_STATUS_INTERVAL = 30  # seconds
 
 
-def _queue_status_loop() -> None:
+def _queue_status_loop(stop_event: threading.Event) -> None:
     """Log queue status every 30 s while tasks are active or pending.
     Logs once more when the queue becomes empty."""
     was_busy = False
-    while True:
-        time.sleep(QUEUE_STATUS_INTERVAL)
+    while not stop_event.is_set():
+        # Wait allows breaking early on shutdown
+        if stop_event.wait(QUEUE_STATUS_INTERVAL):
+            break
+        
         now = time.monotonic()
         with _tasks_lock:
             active_durations = [round(now - t) for t in _active_tasks.values()]
@@ -322,62 +250,64 @@ def _queue_status_loop() -> None:
             was_busy = False
 
 
-# ── Daily keepalive ───────────────────────────────────────────────────────────
+# ── App lifecycle ─────────────────────────────────────────────────────────────
 
-def _keepalive_loop() -> None:
-    """Send a daily dummy prompt to Gemini at noon to keep the auth token alive."""
-    while True:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        next_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
-        if next_noon <= now:
-            next_noon += datetime.timedelta(days=1)
-        sleep_seconds = (next_noon - now).total_seconds()
-        logger.info(
-            "Keepalive: next Gemini ping scheduled at %s UTC (in %.0f s)",
-            next_noon.strftime("%Y-%m-%d %H:%M:%S"),
-            sleep_seconds,
-        )
-        time.sleep(sleep_seconds)
-        logger.info("Keepalive: sending daily Gemini ping…")
-        response = call_gemini("ping", log_context="keepalive")
-        logger.info("Keepalive: Gemini ping done: %s", response)
+class Gemini2MqttApp:
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        # Pass config via userdata
+        self.client.user_data_set({"config": self.config})
+        
+        if self.config.mqtt_username:
+            self.client.username_pw_set(self.config.mqtt_username, self.config.mqtt_password)
+
+        self.client.on_connect = on_connect
+        self.client.on_disconnect = on_disconnect
+        self.client.on_message = on_message
+        
+        self.stop_event = threading.Event()
+        self.status_thread = None
+        global _executor
+        _executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.config.gemini_max_concurrent)
+
+    def start(self, background: bool = False):
+        logger.info("Connecting to MQTT broker %s:%d …", self.config.mqtt_host, self.config.mqtt_port)
+        self.client.connect(self.config.mqtt_host, self.config.mqtt_port, keepalive=60)
+        
+        self.status_thread = threading.Thread(target=_queue_status_loop, args=(self.stop_event,), daemon=True, name="queue-status")
+        self.status_thread.start()
+
+        if background:
+            self.client.loop_start()
+        else:
+            self.client.loop_forever()
+
+    def stop(self):
+        logger.info("Shutting down…")
+        self.stop_event.set()
+        self.client.loop_stop()
+        self.client.disconnect()
+        global _executor
+        if _executor is not None:
+            _executor.shutdown(wait=False)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    config = load_config()
+    app = Gemini2MqttApp(config)
 
-    if MQTT_USERNAME:
-        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-
-    client.on_connect = on_connect
-    client.on_disconnect = on_disconnect
-    client.on_message = on_message
-
-    # Graceful shutdown on SIGTERM / SIGINT
     def _shutdown(signum, frame):
-        logger.info("Shutting down (signal %d)…", signum)
-        client.loop_stop()
-        client.disconnect()
-        _executor.shutdown(wait=False)
+        logger.info("Received signal %d", signum)
+        app.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    logger.info("Connecting to MQTT broker %s:%d …", MQTT_HOST, MQTT_PORT)
-    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
-
-    threading.Thread(target=_queue_status_loop, daemon=True, name="queue-status").start()
-
-    if GEMINI_KEEPALIVE_ENABLED:
-        threading.Thread(target=_keepalive_loop, daemon=True, name="keepalive").start()
-        logger.info("Keepalive ping is ENABLED.")
-    else:
-        logger.info("Keepalive ping is DISABLED (GEMINI_KEEPALIVE_ENABLED=false).")
-
-    client.loop_forever()
+    app.start(background=False)
 
 
 if __name__ == "__main__":

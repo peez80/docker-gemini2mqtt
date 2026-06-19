@@ -15,12 +15,10 @@ services:
       MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
       MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt/#}"
 
-      # ── Gemini CLI ─────────────────────────────────────────────────────────
-      GEMINI_CLI_PATH: "${GEMINI_CLI_PATH:-gemini}"
+      # ── Gemini API ─────────────────────────────────────────────────────────
       GEMINI_MODEL: "${GEMINI_MODEL-}"
       GEMINI_MAX_CONCURRENT: "${GEMINI_MAX_CONCURRENT:-2}"
-      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-360}"
-      GEMINI_KEEPALIVE_ENABLED: "${GEMINI_KEEPALIVE_ENABLED:-false}"
+      GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-120}"
 
       # ── Vertex AI ──────────────────────────────────────────────────────────
       GOOGLE_GENAI_USE_VERTEXAI: true
