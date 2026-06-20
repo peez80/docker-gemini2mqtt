@@ -24,7 +24,7 @@ dev = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 pythonpath = ["."]
-addopts = "--html=report.html --self-contained-html"
+addopts = "--html=report.html --self-contained-html --junitxml=pytest-report.xml"
 markers = [
     "e2e: marks tests as end-to-end requiring real API access"
 ]
