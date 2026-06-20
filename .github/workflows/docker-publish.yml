@@ -83,3 +83,13 @@ jobs:
           # Use GitHub Actions cache to speed up subsequent builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Write Docker Tags to Summary
+        if: success()
+        run: |
+          echo "### 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "The following image tags were successfully pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
