@@ -21,6 +21,8 @@ jobs:
           cache-dependency-glob: "pyproject.toml"
 
       - name: Run Tests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: uv run pytest -v
 
   build-and-push:

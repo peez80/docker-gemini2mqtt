@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 .gemini/
 docker-compose-vertexapi_local.yml
+report.html
+assets/

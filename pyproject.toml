@@ -15,9 +15,16 @@ dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
     "testcontainers>=4.0.0",
+    "pytest-dotenv>=0.5.2",
+    "python-dotenv>=1.0.1",
+    "pytest-html>=4.1.1",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 pythonpath = ["."]
+addopts = "--html=report.html --self-contained-html"
+markers = [
+    "e2e: marks tests as end-to-end requiring real API access"
+]
