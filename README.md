@@ -28,6 +28,10 @@ MQTT Broker
 
 #### Incoming (Prompt)
 
+You can send incoming messages in two formats: **String (Pipe-separated)** or **JSON**.
+
+**Option A: Pipe-separated string (Default)**
+
 Incoming messages must contain two `|`-separated fields:
 
 | Field | Description | Example |
@@ -39,6 +43,20 @@ Incoming messages must contain two `|`-separated fields:
 ```
 home/ai/response|What is the capital of Bavaria?
 ```
+
+**Option B: JSON Payload (Supports File Uploads)**
+
+If you want to attach local documents or images to the prompt, use the JSON format:
+
+```json
+{
+  "response_topic": "home/ai/response",
+  "prompt": "What is the summary of this document?",
+  "files": ["/data/docs/report.pdf"]
+}
+```
+
+> **Note on Files:** The file paths must exist locally on the machine running `gemini2mqtt`. If you are running via Docker, make sure to mount a local directory into the container via `volumes` in your `docker-compose.yml` (e.g. `- /my/local/docs:/data/docs`).
 
 #### Outgoing (Response)
 
@@ -192,13 +210,19 @@ The project uses `pytest` and `testcontainers` for robust unit and integration t
 We recommend using [uv](https://docs.astral.sh/uv/) to run the tests, as it automatically manages the Python version and creates an isolated virtual environment (`venv`) lightning-fast.
 
 1. Install `uv` (if not already installed).
-2. Run the tests:
+2. **Run fast unit tests (Mocked API):**
    ```bash
    uv run pytest -v
    ```
+   *This runs fast, free tests without hitting the real Google Gemini API.*
 
-*(Requires a running Docker daemon for `testcontainers` to spin up the mock MQTT broker).*
+3. **Run End-to-End integration tests (Real API):**
+   ```bash
+   uv run pytest -v --run-e2e
+   ```
+   *This requires a valid `GEMINI_API_KEY` in your `.env` file and will perform real requests against the Google servers (consuming API quotas).*
 
+> *(Testing requires a running Docker daemon for `testcontainers` to spin up the mock MQTT broker).*
 ---
 
 ## Project structure

@@ -13,6 +13,7 @@ import threading
 import time
 from typing import Optional
 from dataclasses import dataclass
+import json
 
 from tenacity import (
     retry,
@@ -119,7 +120,7 @@ def _before_sleep_custom_log(retry_state) -> None:
     before_sleep=_before_sleep_custom_log,
     retry_error_callback=_on_retry_exhausted,
 )
-def _call_gemini_with_retry(prompt: str, config: AppConfig, log_context: str = "", retry_state=None) -> str:
+def _call_gemini_with_retry(prompt: str, config: AppConfig, log_context: str = "", files: list[str] = None, retry_state=None) -> str:
     """Invoke the Gemini API and return the text response (with automatic retry)."""
     prefix = f"[Topic: {log_context}] " if log_context else ""
     
@@ -134,34 +135,74 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, log_context: str = "
         http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
     )
     
-    response = client.models.generate_content(
-        model=config.gemini_model,
-        contents=prompt,
-    )
+    contents = []
+    uploaded_files = []
     
-    return response.text
+    try:
+        if files:
+            for f in files:
+                if not os.path.exists(f):
+                    logger.warning("%sFile not found locally: %s", prefix, f)
+                    continue
+                logger.debug("%sUploading file to Gemini: %s", prefix, f)
+                file_ref = client.files.upload(file=f)
+                uploaded_files.append(file_ref)
+        
+        # Extend contents with uploaded files and the prompt
+        contents.extend(uploaded_files)
+        contents.append(prompt)
+        
+        response = client.models.generate_content(
+            model=config.gemini_model,
+            contents=contents,
+        )
+        return response.text
+    finally:
+        for f_ref in uploaded_files:
+            try:
+                client.files.delete(name=f_ref.name)
+                logger.debug("%sDeleted file from Gemini: %s", prefix, f_ref.name)
+            except Exception as e:
+                logger.warning("%sFailed to delete file %s from Gemini: %s", prefix, f_ref.name, e)
 
-def call_gemini(prompt: str, config: AppConfig, log_context: str = "") -> str:
+def call_gemini(prompt: str, config: AppConfig, log_context: str = "", files: list[str] = None) -> str:
     # We dynamically apply stop_after_attempt based on config
     return _call_gemini_with_retry.retry_with(
         stop=stop_after_attempt(config.gemini_retry_count)
-    )(prompt=prompt, config=config, log_context=log_context)
+    )(prompt=prompt, config=config, log_context=log_context, files=files)
 
 
 # ── MQTT callbacks ────────────────────────────────────────────────────────────
 
-def parse_message(payload: str) -> tuple[str, str] | None:
+def parse_message(payload: str) -> tuple[str, str, list[str]] | None:
     """
     Parse the incoming MQTT message.
-    Expected format: "response_topic|prompt"
-    Returns (response_topic, prompt) or None on parse error.
+    Expected format: "response_topic|prompt" OR a JSON object.
+    Returns (response_topic, prompt, files) or None on parse error.
     """
+    payload_stripped = payload.strip()
+    if payload_stripped.startswith("{") and payload_stripped.endswith("}"):
+        try:
+            data = json.loads(payload_stripped)
+            response_topic = data.get("response_topic")
+            prompt = data.get("prompt")
+            if not response_topic or not prompt:
+                logger.warning("JSON payload missing 'response_topic' or 'prompt': %r", payload)
+                return None
+            files = data.get("files", [])
+            if not isinstance(files, list):
+                files = [files]
+            return str(response_topic), str(prompt), [str(f) for f in files]
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON payload: %s", e)
+            return None
+
     parts = payload.split("|", 1)
     if len(parts) != 2:
-        logger.warning("Invalid message format (expected 2 pipe-separated fields): %r", payload)
+        logger.warning("Invalid message format (expected 2 pipe-separated fields or JSON): %r", payload)
         return None
     response_topic, prompt = parts
-    return response_topic.strip(), prompt.strip()
+    return response_topic.strip(), prompt.strip(), []
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -188,7 +229,7 @@ def on_message(client, userdata, msg):
     if parsed is None:
         return
 
-    response_topic, prompt = parsed
+    response_topic, prompt, files = parsed
     config = userdata["config"]
 
     global _pending_count, _task_id_counter
@@ -198,10 +239,10 @@ def on_message(client, userdata, msg):
         _pending_count += 1
 
     if _executor is not None:
-        _executor.submit(_handle_prompt, client, config, response_topic, prompt, task_id)
+        _executor.submit(_handle_prompt, client, config, response_topic, prompt, files, task_id)
 
 
-def _handle_prompt(client, config: AppConfig, response_topic: str, prompt: str, task_id: int) -> None:
+def _handle_prompt(client, config: AppConfig, response_topic: str, prompt: str, files: list[str], task_id: int) -> None:
     global _pending_count
     with _tasks_lock:
         _pending_count -= 1
@@ -209,7 +250,7 @@ def _handle_prompt(client, config: AppConfig, response_topic: str, prompt: str, 
 
     logger.info("Forwarding prompt to Gemini (response → '%s')", response_topic)
     try:
-        response = call_gemini(prompt, config=config, log_context=response_topic)
+        response = call_gemini(prompt, config=config, log_context=response_topic, files=files)
         payload = f"{response_topic}|{response}"
         client.publish(response_topic, payload)
         logger.info("Response published to topic '%s'", response_topic)

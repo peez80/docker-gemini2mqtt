@@ -26,7 +26,7 @@ jobs:
       - name: Run Tests
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: uv run pytest -v
+        run: uv run pytest -v --run-e2e
 
       - name: Publish Test Summary
         uses: mikepenz/action-junit-report@v4
