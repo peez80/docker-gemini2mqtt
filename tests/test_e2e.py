@@ -4,7 +4,8 @@ import json
 import pytest
 import paho.mqtt.client as mqtt
 
-from gemini2mqtt import load_config, Gemini2MqttApp
+from config import load_config
+from main import Gemini2MqttApp
 
 @pytest.mark.e2e
 @pytest.mark.skipif(not os.environ.get("GEMINI_API_KEY"), reason="GEMINI_API_KEY not set in environment. Skipping E2E test.")

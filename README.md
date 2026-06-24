@@ -139,7 +139,7 @@ cp .env.example .env
 # adjust .env as needed, setting GEMINI_API_KEY
 
 # Start
-python gemini2mqtt.py
+uv run python main.py
 ```
 
 ---
@@ -229,7 +229,11 @@ We recommend using [uv](https://docs.astral.sh/uv/) to run the tests, as it auto
 
 ```
 docker-ai2mqtt/
-├── gemini2mqtt.py       # Main application
+├── main.py              # Main application orchestrator
+├── config.py            # Configuration handling
+├── ai_client.py         # Google Gemini SDK logic
+├── mqtt_client.py       # MQTT connection and parsing
+├── task_manager.py      # Background task and queue tracking
 ├── Dockerfile           # Docker image (Python only)
 ├── docker-compose.yml           # Compose configuration (standard / API Key)
 ├── docker-compose-vertexapi.yml # Compose configuration (Vertex AI / service account)

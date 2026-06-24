@@ -11,8 +11,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
-COPY gemini2mqtt.py .
+COPY *.py .
 
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "gemini2mqtt.py"]
+ENTRYPOINT ["python", "main.py"]

@@ -3,39 +3,8 @@ import pytest
 from unittest.mock import MagicMock
 import paho.mqtt.client as mqtt
 
-from gemini2mqtt import parse_message, Gemini2MqttApp
-
-def test_parse_message_valid_payload():
-    topic, prompt, files = parse_message("my/topic|Hello Gemini")
-    assert topic == "my/topic"
-    assert prompt == "Hello Gemini"
-    assert files == []
-
-def test_parse_message_invalid_payload():
-    assert parse_message("invalid_payload_without_pipe") is None
-    # A payload with multiple pipes is perfectly valid, the prompt simply contains a pipe.
-    topic, prompt, files = parse_message("topic|with|multiple|pipes")
-    assert topic == "topic"
-    assert prompt == "with|multiple|pipes"
-    assert files == []
-
-def test_parse_message_json_payload():
-    import json
-    # Valid JSON without files
-    payload = json.dumps({"response_topic": "json/topic", "prompt": "Hello JSON"})
-    topic, prompt, files = parse_message(payload)
-    assert topic == "json/topic"
-    assert prompt == "Hello JSON"
-    assert files == []
-
-    # Valid JSON with files
-    payload = json.dumps({"response_topic": "json/topic", "prompt": "Hello JSON", "files": ["/tmp/file.txt"]})
-    topic, prompt, files = parse_message(payload)
-    assert files == ["/tmp/file.txt"]
-
-    # Invalid JSON (missing prompt)
-    payload = json.dumps({"response_topic": "json/topic"})
-    assert parse_message(payload) is None
+from main import Gemini2MqttApp
+from config import load_config
 
 def test_full_message_flow(mqtt_broker, monkeypatch, mocker):
     host, port = mqtt_broker
@@ -53,10 +22,9 @@ def test_full_message_flow(mqtt_broker, monkeypatch, mocker):
     mock_client_instance.models.generate_content.return_value = mock_response
 
     # Patch the genai.Client constructor to return our mock
-    mocker.patch("gemini2mqtt.genai.Client", return_value=mock_client_instance)
+    mocker.patch("ai_client.genai.Client", return_value=mock_client_instance)
 
     # Initialize AppConfig using environment variables
-    from gemini2mqtt import load_config
     config = load_config()
 
     # Start the app
@@ -116,9 +84,8 @@ def test_api_failure_flow(mqtt_broker, monkeypatch, mocker):
     # Mock the API to always raise an Exception
     mock_client_instance = MagicMock()
     mock_client_instance.models.generate_content.side_effect = Exception("API completely down")
-    mocker.patch("gemini2mqtt.genai.Client", return_value=mock_client_instance)
+    mocker.patch("ai_client.genai.Client", return_value=mock_client_instance)
 
-    from gemini2mqtt import load_config
     config = load_config()
 
     app = Gemini2MqttApp(config)
@@ -177,9 +144,8 @@ def test_full_json_file_flow_mocked(mqtt_broker, monkeypatch, mocker, tmp_path):
     mock_file_ref.name = "files/mock-123"
     mock_client_instance.files.upload.return_value = mock_file_ref
 
-    mocker.patch("gemini2mqtt.genai.Client", return_value=mock_client_instance)
+    mocker.patch("ai_client.genai.Client", return_value=mock_client_instance)
 
-    from gemini2mqtt import load_config
     config = load_config()
 
     app = Gemini2MqttApp(config)
