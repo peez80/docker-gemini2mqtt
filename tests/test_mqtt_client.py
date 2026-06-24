@@ -46,7 +46,10 @@ def test_mqtt_client_callbacks(monkeypatch):
         gemini_model="gemini",
         gemini_max_concurrent=2,
         gemini_timeout_seconds=120,
-        gemini_retry_count=3
+        gemini_retry_count=3,
+        ai_backend="gemini",
+        vertex_project=None,
+        vertex_location=None
     )
     
     # We will test that when on_message is called, it triggers our registered callback

@@ -54,16 +54,26 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, client: genai.Client
     uploaded_files = []
     
     try:
+        import mimetypes
         if files:
             for f in files:
                 if not os.path.exists(f):
                     logger.warning("%sFile not found locally: %s", prefix, f)
                     continue
-                logger.debug("%sUploading file to AI API: %s", prefix, f)
-                file_ref = client.files.upload(file=f)
-                uploaded_files.append(file_ref)
+                
+                if config.ai_backend == "vertex":
+                    logger.debug("%sReading file inline for Vertex AI: %s", prefix, f)
+                    mime_type, _ = mimetypes.guess_type(f)
+                    if not mime_type:
+                        mime_type = "application/octet-stream"
+                    with open(f, "rb") as fh:
+                        contents.append(types.Part.from_bytes(data=fh.read(), mime_type=mime_type))
+                else:
+                    logger.debug("%sUploading file to AI API: %s", prefix, f)
+                    file_ref = client.files.upload(file=f)
+                    uploaded_files.append(file_ref)
+                    contents.append(file_ref)
         
-        contents.extend(uploaded_files)
         contents.append(prompt)
         
         response = client.models.generate_content(
@@ -82,11 +92,17 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, client: genai.Client
 class AIClient:
     def __init__(self, config: AppConfig):
         self.config = config
-        # Hier könnte künftig Vertex AI via config unterschieden werden
-        # z.B. genai.Client(vertexai=True, project=config.vertex_project, ...)
-        self.client = genai.Client(
-            http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
-        )
+        if config.ai_backend == "vertex":
+            self.client = genai.Client(
+                vertexai=True,
+                project=config.vertex_project,
+                location=config.vertex_location,
+                http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
+            )
+        else:
+            self.client = genai.Client(
+                http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
+            )
 
     def generate_content(self, prompt: str, files: list[str] = None, log_context: str = "") -> str:
         return _call_gemini_with_retry.retry_with(

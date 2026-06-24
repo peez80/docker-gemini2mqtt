@@ -9,3 +9,4 @@ docker-compose-vertexapi_local.yml
 report.html
 assets/
 pytest-report.xml
+.vertex_test_key.json

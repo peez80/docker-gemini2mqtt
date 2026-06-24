@@ -18,10 +18,20 @@ services:
       MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
       MQTT_PROMPT_TOPIC: "${MQTT_PROMPT_TOPIC:-gemini2mqtt/prompt/#}"
 
+      # ── AI Backend (Standard Gemini vs Vertex AI) ─────────────────────────────────
+      AI_BACKEND: "${AI_BACKEND:-gemini}"
+
       # ── Gemini API ─────────────────────────────────────────────────────────
-      GEMINI_API_KEY: "${GEMINI_API_KEY?Variable GEMINI_API_KEY is required}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       GEMINI_MODEL: "${GEMINI_MODEL-}"
       GEMINI_MAX_CONCURRENT: "${GEMINI_MAX_CONCURRENT:-2}"
       GEMINI_TIMEOUT_SECONDS: "${GEMINI_TIMEOUT_SECONDS:-120}"
+
+      # ── Vertex AI ──────────────────────────────────────────────────────────
+      VERTEX_GOOGLE_CLOUD_PROJECT: "${VERTEX_GOOGLE_CLOUD_PROJECT:-}"
+      VERTEX_GOOGLE_CLOUD_LOCATION: "${VERTEX_GOOGLE_CLOUD_LOCATION:-global}"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/mnt/key/key.json}"
+    # volumes:
+    #  - "${VERTEX_CREDENTIAL_FILE:-~/.gemini_vertex/vertex_test_key.json}:/mnt/key/key.json"
     depends_on:
       - mosquitto

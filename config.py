@@ -17,6 +17,9 @@ class AppConfig:
     gemini_max_concurrent: int
     gemini_timeout_seconds: int
     gemini_retry_count: int
+    ai_backend: str
+    vertex_project: Optional[str]
+    vertex_location: Optional[str]
 
 def load_config() -> AppConfig:
     def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
@@ -25,6 +28,10 @@ def load_config() -> AppConfig:
             logger.error("Required environment variable '%s' is not set.", name)
             sys.exit(1)
         return value
+
+    ai_backend = get_env("AI_BACKEND", "gemini").lower()
+    vertex_project = get_env("VERTEX_GOOGLE_CLOUD_PROJECT", required=(ai_backend == "vertex"))
+    vertex_location = get_env("VERTEX_GOOGLE_CLOUD_LOCATION", "global")
 
     return AppConfig(
         mqtt_host=get_env("MQTT_HOST", "localhost"),
@@ -36,4 +43,7 @@ def load_config() -> AppConfig:
         gemini_max_concurrent=int(get_env("GEMINI_MAX_CONCURRENT", "2")),
         gemini_timeout_seconds=int(get_env("GEMINI_TIMEOUT_SECONDS", "120")),
         gemini_retry_count=max(1, int(get_env("GEMINI_RETRY_COUNT", "3"))),
+        ai_backend=ai_backend,
+        vertex_project=vertex_project,
+        vertex_location=vertex_location,
     )

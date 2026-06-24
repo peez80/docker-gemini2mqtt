@@ -95,9 +95,10 @@ cp .env.example .env
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini API calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
-| `GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
-| `GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
-| `VERTEX_CREDENTIAL_FILE` | `~/.gemini_vertex/vertex_key.json` | **Vertex** | Host path to GCP service account key JSON |
+| `AI_BACKEND` | `gemini` | – | Select AI backend: `gemini` or `vertex` |
+| `VERTEX_GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
+| `VERTEX_GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
+| `GOOGLE_APPLICATION_CREDENTIALS`| – | **Vertex** | Container path to GCP service account key JSON |
 
 ---
 
@@ -194,11 +195,12 @@ production / enterprise environment.
    gcloud iam service-accounts keys create vertex_key.json \
      --iam-account=gemini2mqtt@<PROJECT_ID>.iam.gserviceaccount.com
    ```
-5. Populate `.env` and start the Vertex AI Compose stack:
+5. Populate `.env` and start the Compose stack:
    ```bash
    cp .env.example .env
-   # Set GOOGLE_CLOUD_PROJECT and VERTEX_CREDENTIAL_FILE
-   docker compose -f docker-compose-vertexapi.yml up -d --build
+   # Set AI_BACKEND=vertex, VERTEX_GOOGLE_CLOUD_PROJECT
+   # Open docker-compose.yml and uncomment the volume mount for the key file
+   docker compose up -d --build
    ```
 
 ---
@@ -235,8 +237,7 @@ docker-ai2mqtt/
 ├── mqtt_client.py       # MQTT connection and parsing
 ├── task_manager.py      # Background task and queue tracking
 ├── Dockerfile           # Docker image (Python only)
-├── docker-compose.yml           # Compose configuration (standard / API Key)
-├── docker-compose-vertexapi.yml # Compose configuration (Vertex AI / service account)
+├── docker-compose.yml           # Compose configuration
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Environment variable template
 ├── .dockerignore
