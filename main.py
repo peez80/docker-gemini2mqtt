@@ -36,7 +36,7 @@ class Gemini2MqttApp:
         self.mqtt_client.register_message_callback(self.on_mqtt_message)
 
     def on_mqtt_message(self, response_topic: str, prompt: str, files: list[str]) -> None:
-        logger.info("Forwarding prompt to AI API (response → '%s')", response_topic)
+        logger.info("Forwarding prompt to %s AI API (response → '%s')", self.config.ai_backend.capitalize(), response_topic)
         
         def worker_fn():
             try:

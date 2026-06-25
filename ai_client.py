@@ -48,7 +48,7 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, client: genai.Client
     if retry_state and retry_state.attempt_number > config.gemini_retry_count:
         raise Exception(f"Max retries ({config.gemini_retry_count}) exceeded")
 
-    logger.debug("%sCalling AI API (model: %s)...", prefix, config.gemini_model)
+    logger.debug("%sCalling %s AI API (model: %s)...", prefix, config.ai_backend.capitalize(), config.gemini_model)
     
     contents = []
     uploaded_files = []
@@ -93,6 +93,7 @@ class AIClient:
     def __init__(self, config: AppConfig):
         self.config = config
         if config.ai_backend == "vertex":
+            logger.info("Initializing Vertex AI client (project: %s, location: %s)", config.vertex_project, config.vertex_location)
             self.client = genai.Client(
                 vertexai=True,
                 project=config.vertex_project,
@@ -100,6 +101,7 @@ class AIClient:
                 http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
             )
         else:
+            logger.info("Initializing Google AI client")
             self.client = genai.Client(
                 http_options=types.HttpOptions(timeout=config.gemini_timeout_seconds * 1000)
             )
