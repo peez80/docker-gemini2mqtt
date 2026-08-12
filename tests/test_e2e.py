@@ -178,13 +178,20 @@ def test_real_agy_cli_integration(mqtt_broker, monkeypatch, tmp_path):
             f.write(env_token)
         os.chmod(token_file, 0o600)
 
+    # Ensure allowNonWorkspaceAccess is enabled for headless test execution
+    settings_file = os.path.expanduser("~/.gemini/antigravity-cli/settings.json")
+    if not os.path.exists(settings_file):
+        os.makedirs(os.path.dirname(settings_file), exist_ok=True)
+        with open(settings_file, "w") as f:
+            f.write(json.dumps({"allowNonWorkspaceAccess": True}))
+
     host, port = mqtt_broker
 
     monkeypatch.setenv("MQTT_HOST", host)
     monkeypatch.setenv("MQTT_PORT", str(port))
     monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/e2e_prompt_agy")
     monkeypatch.setenv("AI_BACKEND", "agy")
-    monkeypatch.setenv("AGY_TIMEOUT_SECONDS", "60")
+    monkeypatch.setenv("AGY_TIMEOUT_SECONDS", "120")
     monkeypatch.setenv("AGY_DANGEROUSLY_SKIP_PERMISSIONS", "true")
 
     config = load_config()
@@ -219,7 +226,7 @@ def test_real_agy_cli_integration(mqtt_broker, monkeypatch, tmp_path):
         test_client.publish(config.mqtt_prompt_topic, json.dumps(payload))
 
         start_time = time.time()
-        while time.time() - start_time < 60:
+        while time.time() - start_time < 120:
             if received_messages:
                 break
             time.sleep(0.5)

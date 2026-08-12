@@ -25,6 +25,7 @@ jobs:
           ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
         run: |
           mkdir -p /home/runner/.gemini/antigravity-cli
+          echo '{"allowNonWorkspaceAccess": true}' > /home/runner/.gemini/antigravity-cli/settings.json
           if [ -n "$ANTIGRAVITY_OAUTH_TOKEN" ]; then
             printf '%s\n' "$ANTIGRAVITY_OAUTH_TOKEN" > /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
             chmod 600 /home/runner/.gemini/antigravity-cli/antigravity-oauth-token

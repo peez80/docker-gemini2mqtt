@@ -1,3 +1,4 @@
+import subprocess
 import pytest
 from unittest.mock import MagicMock
 from ai_client import AIClient
@@ -132,6 +133,7 @@ def test_ai_client_agy_generate_content(mocker):
     assert response == "Hello from agy"
     mock_run.assert_called_once_with(
         ["agy", "-p", "Say hello", "--dangerously-skip-permissions"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=120,
@@ -169,6 +171,7 @@ def test_ai_client_agy_generate_content_with_files(mocker):
     expected_prompt = "Analyze\n\n[Attached Files]\n- /path/to/file1.txt\n- /path/to/file2.txt"
     mock_run.assert_called_once_with(
         ["agy", "-p", expected_prompt, "--dangerously-skip-permissions"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=120,
@@ -205,6 +208,7 @@ def test_ai_client_agy_with_model_and_effort(mocker):
     assert response == "Custom model response"
     mock_run.assert_called_once_with(
         ["/custom/bin/agy", "-p", "Say hello", "--model", "gemini-3.6-flash-high", "--effort", "high"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=45,

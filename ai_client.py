@@ -122,6 +122,7 @@ def _call_agy_with_retry(prompt: str, config: AppConfig, log_context: str = "", 
     try:
         res = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=config.agy_timeout_seconds,
