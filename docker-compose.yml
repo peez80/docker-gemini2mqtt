@@ -31,7 +31,15 @@ services:
       VERTEX_GOOGLE_CLOUD_PROJECT: "${VERTEX_GOOGLE_CLOUD_PROJECT:-}"
       VERTEX_GOOGLE_CLOUD_LOCATION: "${VERTEX_GOOGLE_CLOUD_LOCATION:-global}"
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/mnt/key/key.json}"
+
+      # ── agy CLI Backend ────────────────────────────────────────────────────
+      AGY_BINARY_PATH: "${AGY_BINARY_PATH:-agy}"
+      AGY_MODEL: "${AGY_MODEL:-}"
+      AGY_EFFORT: "${AGY_EFFORT:-}"
+      AGY_TIMEOUT_SECONDS: "${AGY_TIMEOUT_SECONDS:-120}"
+      AGY_DANGEROUSLY_SKIP_PERMISSIONS: "${AGY_DANGEROUSLY_SKIP_PERMISSIONS:-true}"
     # volumes:
-    #  - "${VERTEX_CREDENTIAL_FILE:-~/.gemini_vertex/vertex_test_key.json}:/mnt/key/key.json"
+    #   - "${VERTEX_CREDENTIAL_FILE:-~/.gemini_vertex/vertex_test_key.json}:/mnt/key/key.json"
+    #   - "${HOME}/.gemini:/root/.gemini"
     depends_on:
       - mosquitto

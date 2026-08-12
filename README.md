@@ -8,7 +8,7 @@
 
 https://github.com/peez80/docker-gemini2mqtt
 
-> An MQTT-to-Gemini-AI bridge service that receives prompts via MQTT, forwards them to Google Gemini API, and publishes the response back via MQTT.
+> An MQTT bridge service connecting to Google Gemini AI via **Google AI Studio API**, **Google Cloud Vertex AI**, or the **Google Antigravity CLI (`agy`)**.
 
 ---
 
@@ -95,10 +95,15 @@ cp .env.example .env
 | `GEMINI_MAX_CONCURRENT` | `2` | – | Max. simultaneous Gemini calls |
 | `GEMINI_TIMEOUT_SECONDS` | `120` | – | Timeout for Gemini API calls in seconds |
 | `GEMINI_RETRY_COUNT` | `3` | – | Max. number of attempts per Gemini call (min. 1) |
-| `AI_BACKEND` | `gemini` | – | Select AI backend: `gemini` or `vertex` |
+| `AI_BACKEND` | `gemini` | – | Select AI backend: `gemini`, `vertex`, or `agy` |
 | `VERTEX_GOOGLE_CLOUD_PROJECT` | – | **Vertex** | GCP project ID (only for Vertex AI setup) |
 | `VERTEX_GOOGLE_CLOUD_LOCATION` | `global` | **Vertex** | GCP region/location (only for Vertex AI setup) |
 | `GOOGLE_APPLICATION_CREDENTIALS`| – | **Vertex** | Container path to GCP service account key JSON |
+| `AGY_BINARY_PATH` | `agy` | – | Path to Antigravity CLI binary |
+| `AGY_MODEL` | – | – | Model override for agy CLI (e.g. `gemini-3.6-flash-high`) |
+| `AGY_EFFORT` | – | – | Reasoning effort for agy CLI (`low`, `medium`, `high`) |
+| `AGY_TIMEOUT_SECONDS` | `120` | – | Timeout for agy CLI calls in seconds |
+| `AGY_DANGEROUSLY_SKIP_PERMISSIONS`| `true` | – | Auto-approve tool permissions for headless MQTT execution |
 
 ---
 
@@ -145,44 +150,43 @@ uv run python main.py
 
 ---
 
-## Authentication
+## Authentication & Backend Selection
 
-### Standard Mode (Google AI Studio API Key)
+`gemini2mqtt` supports three distinct AI backends depending on your infrastructure and privacy requirements:
 
-The default and easiest way to authenticate is by obtaining a free API key from [Google AI Studio](https://aistudio.google.com/).
-1. Generate an API Key.
+| Feature / Criteria | Standard (AI Studio) | Vertex AI (GCP) | Antigravity CLI (`agy`) |
+|---|---|---|---|
+| **Primary Use Case** | Quick setup, personal projects | Enterprise, data compliance | Local agent workflows, reasoning control |
+| **Authentication** | API Key (`GEMINI_API_KEY`) | Service Account Key JSON | OAuth Token (`~/.gemini/...`) |
+| **Pricing / Quota** | Free tier (rate-limited) | Paid (GCP Project Billing) | Google Account / Antigravity tier |
+| **Data Training** | Subject to AI Studio terms | ❌ Never used for training | Antigravity account terms |
+| **GDPR / Region Control** | Global endpoints | ✅ Region pinning (e.g. `europe-west4`) | Managed by Antigravity CLI |
+| **Reasoning Effort Control** | Default model reasoning | Default model reasoning | ✅ (`--effort low / medium / high`) |
+| **Tool / Permission Approval** | Direct API | Direct API | ✅ Auto-approved (`--dangerously-skip-permissions`) |
+| **Local File Attachments** | Google AI Files API | Inline Bytes (Base64) | Local workspace file context |
+
+---
+
+### Option 1: Standard Mode (Google AI Studio API Key)
+
+The default and easiest way to authenticate is by obtaining an API key from [Google AI Studio](https://aistudio.google.com/):
+1. Create a free API Key in Google AI Studio.
 2. Set `GEMINI_API_KEY=your_api_key_here` in your `.env` file.
+3. Keep `AI_BACKEND=gemini` (default).
 
-### Vertex AI API (Alternative)
+---
 
-#### When to use Vertex AI?
+### Option 2: Vertex AI API (Google Cloud Platform)
 
-| | Standard (AI Studio) | Vertex AI |
-|---|---|---|
-| Quick setup | ✅ | — |
-| Free tier | ✅ | — |
-| **Paid API (billing required)** | — | ✅ |
-| Production server / CI | — | ✅ |
-| Data not used for model training | — | ✅ |
-| GDPR / data residency in EU | — | ✅ (region `europe-west4`) |
-| Higher quotas & SLA | — | ✅ |
+Vertex AI is recommended for enterprise setups with strict data residency requirements (EU data hosting) and SLA guarantees:
 
-**Standard mode** is the easiest setup and works well for personal or home-server use.
-
-**Vertex AI** is a paid Google Cloud API — billing must be enabled on your GCP project.
-Use it when data privacy is a requirement (requests are not used for training),
-when you need guaranteed quotas beyond the free tier, or when running in a
-production / enterprise environment.
-
-#### Prerequisites for Vertex AI
-
-1. Create (or reuse) a [GCP project](https://console.cloud.google.com/) with billing enabled
+1. Create (or reuse) a [GCP project](https://console.cloud.google.com/) with billing enabled.
 2. Enable the **Vertex AI API**:
-   ```
+   ```bash
    gcloud services enable aiplatform.googleapis.com --project=<PROJECT_ID>
    ```
 3. Create a **Service Account** and grant it the `Vertex AI User` role:
-   ```
+   ```bash
    gcloud iam service-accounts create gemini2mqtt \
      --display-name="gemini2mqtt" --project=<PROJECT_ID>
 
@@ -191,40 +195,124 @@ production / enterprise environment.
      --role="roles/aiplatform.user"
    ```
 4. Download the **JSON key**:
-   ```
+   ```bash
    gcloud iam service-accounts keys create vertex_key.json \
      --iam-account=gemini2mqtt@<PROJECT_ID>.iam.gserviceaccount.com
    ```
-5. Populate `.env` and start the Compose stack:
+5. Configure `.env` and `docker-compose.yml`:
    ```bash
-   cp .env.example .env
-   # Set AI_BACKEND=vertex, VERTEX_GOOGLE_CLOUD_PROJECT
-   # Open docker-compose.yml and uncomment the volume mount for the key file
-   docker compose up -d --build
+   AI_BACKEND=vertex
+   VERTEX_GOOGLE_CLOUD_PROJECT=your-project-id
+   VERTEX_GOOGLE_CLOUD_LOCATION=global  # or europe-west4, us-central1, etc.
+   GOOGLE_APPLICATION_CREDENTIALS=/app/vertex_key.json
    ```
 
 ---
 
-## Testing
+### Option 3: Antigravity CLI (`agy`) Backend
+
+You can use the **Google Antigravity CLI (`agy`)** as an execution backend. In this mode, incoming MQTT prompts are passed non-interactively to `agy -p "<prompt>"` via subprocess execution with automatic retry handling, configurable reasoning effort, and local file context support.
+
+#### 1. Local Installation & First Login
+If not already installed on your host machine:
+```bash
+# Install the agy CLI
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+
+# Run agy once to complete the browser-based login flow
+agy
+```
+Upon successful login, `agy` stores its session token in `~/.gemini/antigravity-cli/antigravity-oauth-token`.
+
+#### 2. Authentication Concept: Volume-Mount vs. CI Secret
+- **Local & Docker Compose (Volume Mount)**:
+  Mount your local `${HOME}/.gemini` directory into the container. `gemini2mqtt` running inside Docker will access your local `antigravity-oauth-token` automatically.
+- **GitHub Actions / CI (`ANTIGRAVITY_OAUTH_TOKEN`)**:
+  In CI environments where no host folder exists, the *text content* of `~/.gemini/antigravity-cli/antigravity-oauth-token` is passed as a repository secret. The CI workflow writes this token directly to `/root/.gemini/antigravity-cli/antigravity-oauth-token` during test execution.
+
+#### 3. Configuration (`.env`)
+```bash
+AI_BACKEND=agy
+AGY_BINARY_PATH=agy
+AGY_MODEL=gemini-3.6-flash-high       # Optional model override
+AGY_EFFORT=high                      # Reasoning effort: low, medium, or high
+AGY_TIMEOUT_SECONDS=120              # Max timeout per CLI prompt execution
+AGY_DANGEROUSLY_SKIP_PERMISSIONS=true # Auto-approve tool calls for headless MQTT execution
+```
+
+#### 4. Docker Compose Setup for `agy`
+```yaml
+services:
+  gemini2mqtt:
+    image: peez/gemini2mqtt:latest
+    container_name: gemini2mqtt
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AI_BACKEND: "agy"
+      AGY_MODEL: "gemini-3.6-flash-high"
+      AGY_EFFORT: "high"
+      AGY_DANGEROUSLY_SKIP_PERMISSIONS: "true"
+    volumes:
+      # Mount host credentials into the container
+      - "${HOME}/.gemini:/root/.gemini"
+      # Optional: mount local documents directory for file attachment prompts
+      - "/path/to/docs:/data/docs"
+```
+
+
+---
+
+## Testing & CI
 
 The project uses `pytest` and `testcontainers` for robust unit and integration testing with an embedded Mosquitto broker.
 
-We recommend using [uv](https://docs.astral.sh/uv/) to run the tests, as it automatically manages the Python version and creates an isolated virtual environment (`venv`) lightning-fast.
+### Running tests in Docker (Recommended)
 
-1. Install `uv` (if not already installed).
-2. **Run fast unit tests (Mocked API):**
+To mirror the production environment and CI test execution:
+
+1. **Build the test image:**
    ```bash
-   uv run pytest -v
+   docker build -t gemini2mqtt:test .
    ```
-   *This runs fast, free tests without hitting the real Google Gemini API.*
 
-3. **Run End-to-End integration tests (Real API):**
+2. **Run Unit Tests (Mocked API):**
    ```bash
-   uv run pytest -v --run-e2e
+   docker run --rm \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     -v /root/.gemini:/root/.gemini \
+     -v $(pwd):/app \
+     -w /app \
+     --entrypoint bash \
+     gemini2mqtt:test \
+     -c "pip install uv && uv run pytest -v -m 'not e2e'"
    ```
-   *This requires a valid `GEMINI_API_KEY` in your `.env` file and will perform real requests against the Google servers (consuming API quotas).*
 
-> *(Testing requires a running Docker daemon for `testcontainers` to spin up the mock MQTT broker).*
+3. **Run End-to-End integration tests (Real AI Backends):**
+   ```bash
+   docker run --rm \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     -v /root/.gemini:/root/.gemini \
+     -v $(pwd):/app \
+     -w /app \
+     --entrypoint bash \
+     gemini2mqtt:test \
+     -c "pip install uv && uv run pytest -v --run-e2e"
+   ```
+
+### GitHub Actions CI Secrets
+
+In GitHub Actions, the test suite is executed in the `gemini2mqtt:test` container. You can optionally configure the following Repository Secrets to run live E2E tests in CI:
+
+| Secret | Description | Setup Command / Origin |
+|---|---|---|
+| `GEMINI_API_KEY` | Gemini API Key for running `test_real_gemini_api_integration` | [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `ANTIGRAVITY_OAUTH_TOKEN` | Token content for running `test_real_agy_cli_integration` | `cat ~/.gemini/antigravity-cli/antigravity-oauth-token` |
+| `DOCKERHUB_USERNAME` | Docker Hub Username (for build & push on `main`) | [Docker Hub](https://hub.docker.com/) |
+| `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token | [Docker Hub Security Settings](https://hub.docker.com/settings/security) |
+
+*(If AI secrets are omitted, the respective E2E tests are automatically and cleanly skipped without failing the CI pipeline).*
 ---
 
 ## Project structure

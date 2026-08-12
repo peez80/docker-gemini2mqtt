@@ -190,3 +190,170 @@ def test_full_json_file_flow_mocked(mqtt_broker, monkeypatch, mocker, tmp_path):
         test_client.loop_stop()
         test_client.disconnect()
         app.stop()
+
+
+def test_full_message_flow_agy(mqtt_broker, monkeypatch, mocker):
+    """Test full string message flow using agy CLI backend."""
+    host, port = mqtt_broker
+
+    monkeypatch.setenv("MQTT_HOST", host)
+    monkeypatch.setenv("MQTT_PORT", str(port))
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/prompt_agy")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.setenv("AGY_BINARY_PATH", "agy")
+
+    mock_run = mocker.patch("subprocess.run")
+    mock_run.return_value = MagicMock(returncode=0, stdout="Mocked Agy Response\n", stderr="")
+
+    config = load_config()
+    app = Gemini2MqttApp(config)
+    app.start(background=True)
+
+    try:
+        time.sleep(0.5)
+
+        received_messages = []
+        def on_test_message(client, userdata, msg):
+            received_messages.append(msg.payload.decode("utf-8"))
+
+        test_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        test_client.on_message = on_test_message
+        test_client.connect(host, port)
+        test_client.loop_start()
+
+        response_topic = "test/response_agy"
+        test_client.subscribe(response_topic)
+        time.sleep(0.5)
+
+        prompt_payload = f"{response_topic}|Hello Agy CLI"
+        test_client.publish(config.mqtt_prompt_topic, prompt_payload)
+
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            if received_messages:
+                break
+            time.sleep(0.1)
+
+        assert len(received_messages) == 1
+        assert received_messages[0] == f"{response_topic}|Mocked Agy Response"
+        mock_run.assert_called_once()
+
+    finally:
+        test_client.loop_stop()
+        test_client.disconnect()
+        app.stop()
+
+
+def test_full_json_file_flow_agy_mocked(mqtt_broker, monkeypatch, mocker, tmp_path):
+    """Test JSON payload with file attachment using agy CLI backend."""
+    import json
+    host, port = mqtt_broker
+
+    monkeypatch.setenv("MQTT_HOST", host)
+    monkeypatch.setenv("MQTT_PORT", str(port))
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/prompt_agy_json")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+
+    test_file = tmp_path / "mocked_agy_file.txt"
+    test_file.write_text("Mock content for agy")
+
+    mock_run = mocker.patch("subprocess.run")
+    mock_run.return_value = MagicMock(returncode=0, stdout="Mocked Agy File Response\n", stderr="")
+
+    config = load_config()
+    app = Gemini2MqttApp(config)
+    app.start(background=True)
+
+    try:
+        time.sleep(0.5)
+
+        received_messages = []
+        def on_test_message(client, userdata, msg):
+            received_messages.append(msg.payload.decode("utf-8"))
+
+        test_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        test_client.on_message = on_test_message
+        test_client.connect(host, port)
+        test_client.loop_start()
+
+        response_topic = "test/response_agy_json"
+        test_client.subscribe(response_topic)
+        time.sleep(0.5)
+
+        payload = {
+            "response_topic": response_topic,
+            "prompt": "Analyze file with agy",
+            "files": [str(test_file)]
+        }
+        test_client.publish(config.mqtt_prompt_topic, json.dumps(payload))
+
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            if received_messages:
+                break
+            time.sleep(0.1)
+
+        assert len(received_messages) == 1
+        assert received_messages[0] == f"{response_topic}|Mocked Agy File Response"
+
+        # Verify command arguments passed to subprocess.run
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd[0] == "agy"
+        assert called_cmd[1] == "-p"
+        assert str(test_file) in called_cmd[2]
+
+    finally:
+        test_client.loop_stop()
+        test_client.disconnect()
+        app.stop()
+
+
+def test_api_failure_flow_agy(mqtt_broker, monkeypatch, mocker):
+    """Test that if agy CLI fails repeatedly, an ERROR message is published back."""
+    host, port = mqtt_broker
+
+    monkeypatch.setenv("MQTT_HOST", host)
+    monkeypatch.setenv("MQTT_PORT", str(port))
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/prompt_agy_fail")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.setenv("GEMINI_RETRY_COUNT", "1")
+
+    mock_run = mocker.patch("subprocess.run")
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Agy execution crashed")
+
+    config = load_config()
+    app = Gemini2MqttApp(config)
+    app.start(background=True)
+
+    try:
+        time.sleep(0.5)
+
+        received_messages = []
+        def on_test_message(client, userdata, msg):
+            received_messages.append(msg.payload.decode("utf-8"))
+
+        test_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        test_client.on_message = on_test_message
+        test_client.connect(host, port)
+        test_client.loop_start()
+
+        response_topic = "test/response_agy_fail"
+        test_client.subscribe(response_topic)
+        time.sleep(0.5)
+
+        test_client.publish(config.mqtt_prompt_topic, f"{response_topic}|Fail this agy call")
+
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            if received_messages:
+                break
+            time.sleep(0.1)
+
+        assert len(received_messages) == 1
+        assert "ERROR: agy CLI failed (code 1): Agy execution crashed" in received_messages[0]
+
+    finally:
+        test_client.loop_stop()
+        test_client.disconnect()
+        app.stop()
+

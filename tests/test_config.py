@@ -34,3 +34,37 @@ def test_load_config_vertex_missing_project(monkeypatch):
     # missing VERTEX_GOOGLE_CLOUD_PROJECT should sys.exit(1)
     with pytest.raises(SystemExit):
         load_config()
+
+def test_load_config_agy_backend_defaults(monkeypatch):
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/topic")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.delenv("AGY_BINARY_PATH", raising=False)
+    monkeypatch.delenv("AGY_MODEL", raising=False)
+    monkeypatch.delenv("AGY_EFFORT", raising=False)
+    monkeypatch.delenv("AGY_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("AGY_DANGEROUSLY_SKIP_PERMISSIONS", raising=False)
+
+    config = load_config()
+    assert config.ai_backend == "agy"
+    assert config.agy_binary_path == "agy"
+    assert config.agy_model is None
+    assert config.agy_effort is None
+    assert config.agy_timeout_seconds == 120
+    assert config.agy_dangerously_skip_permissions is True
+
+def test_load_config_agy_backend_custom(monkeypatch):
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/topic")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.setenv("AGY_BINARY_PATH", "/usr/local/bin/agy")
+    monkeypatch.setenv("AGY_MODEL", "gemini-3.6-flash-high")
+    monkeypatch.setenv("AGY_EFFORT", "high")
+    monkeypatch.setenv("AGY_TIMEOUT_SECONDS", "60")
+    monkeypatch.setenv("AGY_DANGEROUSLY_SKIP_PERMISSIONS", "false")
+
+    config = load_config()
+    assert config.ai_backend == "agy"
+    assert config.agy_binary_path == "/usr/local/bin/agy"
+    assert config.agy_model == "gemini-3.6-flash-high"
+    assert config.agy_effort == "high"
+    assert config.agy_timeout_seconds == 60
+    assert config.agy_dangerously_skip_permissions is False

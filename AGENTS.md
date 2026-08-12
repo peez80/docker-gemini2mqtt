@@ -25,17 +25,41 @@ Bei allen Code-Änderungen und Neuimplementierungen **muss** strikt nach dem **T
 
 Alle Tests befinden sich im Ordner `tests/` und nutzen `pytest` sowie `testcontainers` (für den MQTT Broker).
 
-### Standard Unit-Tests (Mocked API)
-Führt alle verlässlichen und schnellen Unit-Tests ohne externe API-Aufrufe aus:
-```bash
-uv run pytest -v -m "not e2e"
-```
-*(Alternativ via system/venv pytest: `pytest -v -m "not e2e"`)*
+> [!IMPORTANT]
+> **Pflicht zur Test-Ausführung im Docker-Container:**
+> Tests **müssen IMMER via Docker-Container** ausgeführt werden, um die reale Produktionsumgebung und Abhängigkeiten (inklusive `agy`-Installation und Container-Dateipfade) bestmöglich widerzuspiegeln.
 
-### End-to-End Tests (Real API)
-Führt E2E-Tests aus, die eine echte Verbindung zur Gemini API erfordern (benötigt `GEMINI_API_KEY` in `.env`):
+### 1. Docker-Image bauen
+Vor der Testausführung das Test-Image aktualisieren:
 ```bash
-uv run pytest -v -m "e2e"
+docker build -t gemini2mqtt:test .
 ```
-*(Hinweis: Für den MQTT-Testcontainer muss der Docker-Daemon laufen).*
+
+### 2. Standard Unit-Tests (Mocked API) im Docker-Container
+Führt alle verlässlichen und schnellen Unit-Tests ohne externe API-Aufrufe isoliert im Container aus:
+```bash
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /root/.gemini:/root/.gemini \
+  -v /apps:/app \
+  -w /app \
+  --entrypoint bash \
+  gemini2mqtt:test \
+  -c "pip install uv && uv run pytest -v -m 'not e2e'"
+```
+
+### 3. End-to-End Tests (Real API / agy CLI) im Docker-Container
+Führt E2E-Tests aus (z. B. mit echter Gemini API oder lokaler `agy` CLI und Dateikontext):
+```bash
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /root/.gemini:/root/.gemini \
+  -v /apps:/app \
+  -w /app \
+  --entrypoint bash \
+  gemini2mqtt:test \
+  -c "pip install uv && uv run pytest -v --run-e2e"
+```
+*(Hinweis: Durch das Mounten von `/var/run/docker.sock` kann `testcontainers` auch aus dem Test-Container heraus den MQTT-Broker starten).*
+
 

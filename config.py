@@ -20,6 +20,11 @@ class AppConfig:
     ai_backend: str
     vertex_project: Optional[str]
     vertex_location: Optional[str]
+    agy_binary_path: str = "agy"
+    agy_model: Optional[str] = None
+    agy_effort: Optional[str] = None
+    agy_timeout_seconds: int = 120
+    agy_dangerously_skip_permissions: bool = True
 
 def load_config() -> AppConfig:
     def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
@@ -33,6 +38,11 @@ def load_config() -> AppConfig:
     vertex_project = get_env("VERTEX_GOOGLE_CLOUD_PROJECT", required=(ai_backend == "vertex"))
     vertex_location = get_env("VERTEX_GOOGLE_CLOUD_LOCATION", "global")
 
+    gemini_timeout_seconds = int(get_env("GEMINI_TIMEOUT_SECONDS", "120"))
+    agy_timeout_seconds = int(get_env("AGY_TIMEOUT_SECONDS", str(gemini_timeout_seconds)))
+    agy_skip_perms_str = get_env("AGY_DANGEROUSLY_SKIP_PERMISSIONS", "true").lower()
+    agy_dangerously_skip_permissions = agy_skip_perms_str in ("true", "1", "yes")
+
     return AppConfig(
         mqtt_host=get_env("MQTT_HOST", "localhost"),
         mqtt_port=int(get_env("MQTT_PORT", "1883")),
@@ -41,9 +51,14 @@ def load_config() -> AppConfig:
         mqtt_prompt_topic=get_env("MQTT_PROMPT_TOPIC", "gemini2mqtt/prompt", required=True),
         gemini_model=get_env("GEMINI_MODEL", "gemini-3.1-flash-lite"),
         gemini_max_concurrent=int(get_env("GEMINI_MAX_CONCURRENT", "2")),
-        gemini_timeout_seconds=int(get_env("GEMINI_TIMEOUT_SECONDS", "120")),
+        gemini_timeout_seconds=gemini_timeout_seconds,
         gemini_retry_count=max(1, int(get_env("GEMINI_RETRY_COUNT", "3"))),
         ai_backend=ai_backend,
         vertex_project=vertex_project,
         vertex_location=vertex_location,
+        agy_binary_path=get_env("AGY_BINARY_PATH", "agy"),
+        agy_model=get_env("AGY_MODEL"),
+        agy_effort=get_env("AGY_EFFORT"),
+        agy_timeout_seconds=agy_timeout_seconds,
+        agy_dangerously_skip_permissions=agy_dangerously_skip_permissions,
     )
