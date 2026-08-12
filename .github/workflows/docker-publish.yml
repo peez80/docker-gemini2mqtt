@@ -21,13 +21,14 @@ jobs:
         run: docker build -t gemini2mqtt:test .
 
       - name: Setup Antigravity Auth
-        if: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN != '' }}
         env:
           ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
         run: |
           mkdir -p /home/runner/.gemini/antigravity-cli
-          printf '%s\n' "$ANTIGRAVITY_OAUTH_TOKEN" > /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
-          chmod 600 /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
+          if [ -n "$ANTIGRAVITY_OAUTH_TOKEN" ]; then
+            printf '%s\n' "$ANTIGRAVITY_OAUTH_TOKEN" > /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
+            chmod 600 /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
+          fi
 
       - name: Run Tests in Docker Container
         env:
