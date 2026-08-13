@@ -49,9 +49,36 @@ docker run --rm \
 ```
 
 ### 3. End-to-End Tests (Real API / agy CLI) im Docker-Container
-Führt E2E-Tests aus (z. B. mit echter Gemini API oder lokaler `agy` CLI und Dateikontext):
+
+#### Option A: Mit gemountetem `~/.gemini`-Verzeichnis (Standard lokal)
+Führt E2E-Tests mit der lokalen Antigravity-Konfiguration und echten APIs aus:
 ```bash
-docker run --rm \
+docker run --rm --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /root/.gemini:/root/.gemini \
+  -v /apps:/app \
+  -w /app \
+  --entrypoint bash \
+  gemini2mqtt:test \
+  -c "pip install uv && uv run pytest -v --run-e2e -k test_real_agy_cli_integration_mounted_config"
+```
+
+#### Option B: Im isolierten Modus via `ANTIGRAVITY_OAUTH_TOKEN` (CI-Simulation ohne gemounteten `.gemini`-Ordner)
+Führt E2E-Tests in einer isolierten Sandbox aus, bei der die Authentifizierung ausschließlich über die Umgebungsvariable `ANTIGRAVITY_OAUTH_TOKEN` gebootstrappt wird:
+```bash
+docker run --rm --network host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /apps:/app \
+  -w /app \
+  -e ANTIGRAVITY_OAUTH_TOKEN="$(cat /root/.gemini/antigravity-cli/antigravity-oauth-token 2>/dev/null)" \
+  --entrypoint bash \
+  gemini2mqtt:test \
+  -c "pip install uv && uv run pytest -v --run-e2e -k test_real_agy_cli_integration_env_token_isolated"
+```
+
+#### Option C: Vollständige Suite (alle E2E-Tests)
+```bash
+docker run --rm --network host \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /root/.gemini:/root/.gemini \
   -v /apps:/app \
@@ -60,6 +87,7 @@ docker run --rm \
   gemini2mqtt:test \
   -c "pip install uv && uv run pytest -v --run-e2e"
 ```
-*(Hinweis: Durch das Mounten von `/var/run/docker.sock` kann `testcontainers` auch aus dem Test-Container heraus den MQTT-Broker starten).*
+*(Hinweis: Durch das Mounten von `/var/run/docker.sock` kann `testcontainers` auch aus dem Test-Container heraus den MQTT-Broker starten. In WSL-Umgebungen empfiehlt sich `--network host`).*
+
 
 

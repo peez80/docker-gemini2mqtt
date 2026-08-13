@@ -291,4 +291,47 @@ def test_has_agy_auth_helper(monkeypatch, tmp_path):
     assert _has_agy_auth()
 
 
+def test_has_mounted_agy_config_helper(monkeypatch, tmp_path):
+    from tests.test_e2e import _has_mounted_agy_config
+
+    fake_home = tmp_path / "home_mounted"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    # Initially missing
+    assert not _has_mounted_agy_config()
+
+    # Empty token file
+    token_dir = fake_home / ".gemini" / "antigravity-cli"
+    token_dir.mkdir(parents=True)
+    token_file = token_dir / "antigravity-oauth-token"
+    token_file.write_text("   \n")
+    assert not _has_mounted_agy_config()
+
+    # Valid token file
+    token_file.write_text('{"token": "mounted-token-abc"}')
+    assert _has_mounted_agy_config()
+
+
+def test_get_active_token_payload_helper(monkeypatch, tmp_path):
+    from tests.test_e2e import _get_active_token_payload
+
+    fake_home = tmp_path / "home_payload"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    # Env var precedence
+    monkeypatch.setenv("ANTIGRAVITY_OAUTH_TOKEN", "env-token-123")
+    assert _get_active_token_payload() == "env-token-123"
+
+    # File fallback
+    monkeypatch.delenv("ANTIGRAVITY_OAUTH_TOKEN", raising=False)
+    token_dir = fake_home / ".gemini" / "antigravity-cli"
+    token_dir.mkdir(parents=True)
+    token_file = token_dir / "antigravity-oauth-token"
+    token_file.write_text("file-token-456")
+    assert _get_active_token_payload() == "file-token-456"
+
+
+
 
