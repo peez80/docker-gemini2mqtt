@@ -70,11 +70,12 @@ docker run --rm --network host \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /apps:/app \
   -w /app \
-  -e ANTIGRAVITY_OAUTH_TOKEN="$(cat /root/.gemini/antigravity-cli/antigravity-oauth-token 2>/dev/null)" \
+  -e ANTIGRAVITY_OAUTH_TOKEN="$(python3 -c "import json, os; print(json.dumps(json.load(open(os.path.expanduser('~/.gemini/antigravity-cli/antigravity-oauth-token')))))" 2>/dev/null)" \
   --entrypoint bash \
   gemini2mqtt:test \
   -c "pip install uv && uv run pytest -v --run-e2e -k test_real_agy_cli_integration_env_token_isolated"
 ```
+*(Hinweis: `ANTIGRAVITY_OAUTH_TOKEN` sollte das vollständige JSON inklusive `refresh_token` enthalten, damit `agy` abgelaufene `access_token` vollautomatisch refreshen kann).*
 
 #### Option C: Vollständige Suite (alle E2E-Tests)
 ```bash
@@ -88,6 +89,7 @@ docker run --rm --network host \
   -c "pip install uv && uv run pytest -v --run-e2e"
 ```
 *(Hinweis: Durch das Mounten von `/var/run/docker.sock` kann `testcontainers` auch aus dem Test-Container heraus den MQTT-Broker starten. In WSL-Umgebungen empfiehlt sich `--network host`).*
+
 
 
 

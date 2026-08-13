@@ -308,7 +308,7 @@ In GitHub Actions, the test suite is executed in the `gemini2mqtt:test` containe
 | Secret | Description | Setup Command / Origin |
 |---|---|---|
 | `GEMINI_API_KEY` | Gemini API Key for running `test_real_gemini_api_integration` | [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| `ANTIGRAVITY_OAUTH_TOKEN` | Token content for running `test_real_agy_cli_integration` | `cat ~/.gemini/antigravity-cli/antigravity-oauth-token` |
+| `ANTIGRAVITY_OAUTH_TOKEN` | Token JSON with `refresh_token` for running `test_real_agy_cli_integration` in CI | `python3 -c "import json, os; print(json.dumps(json.load(open(os.path.expanduser('~/.gemini/antigravity-cli/antigravity-oauth-token')))))"` |
 | `DOCKERHUB_USERNAME` | Docker Hub Username (for build & push on `main`) | [Docker Hub](https://hub.docker.com/) |
 | `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token | [Docker Hub Security Settings](https://hub.docker.com/settings/security) |
 

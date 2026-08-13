@@ -150,17 +150,26 @@ def test_real_vertex_api_integration(mqtt_broker, monkeypatch, tmp_path):
         app.stop()
 
 
+def _is_valid_token_dict(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    token_obj = data.get("token")
+    if isinstance(token_obj, dict):
+        return bool(token_obj.get("access_token") or token_obj.get("refresh_token") or token_obj.get("token"))
+    if token_obj and str(token_obj).strip():
+        return True
+    return bool(data.get("access_token") or data.get("refresh_token") or data.get("id_token"))
+
+
 def _has_agy_auth() -> bool:
-    """Check if a valid Antigravity CLI OAuth token or environment secret is available."""
+    """Check if a valid Antigravity CLI OAuth token, refresh token, or environment secret is available."""
     # 1. Check environment variable
     env_token = os.environ.get("ANTIGRAVITY_OAUTH_TOKEN", "").strip()
     if env_token:
         try:
             data = json.loads(env_token)
             if isinstance(data, dict):
-                token_val = data.get("token") or data.get("access_token") or ""
-                if str(token_val).strip():
-                    return True
+                return _is_valid_token_dict(data)
             elif str(data).strip():
                 return True
         except Exception:
@@ -178,8 +187,7 @@ def _has_agy_auth() -> bool:
             try:
                 data = json.loads(content)
                 if isinstance(data, dict):
-                    token_val = data.get("token") or data.get("access_token") or ""
-                    return bool(str(token_val).strip())
+                    return _is_valid_token_dict(data)
                 return bool(str(data).strip())
             except Exception:
                 return len(content) > 0
@@ -201,14 +209,14 @@ def _has_mounted_agy_config() -> bool:
             try:
                 data = json.loads(content)
                 if isinstance(data, dict):
-                    token_val = data.get("token") or data.get("access_token") or ""
-                    return bool(str(token_val).strip())
+                    return _is_valid_token_dict(data)
                 return bool(str(data).strip())
             except Exception:
                 return len(content) > 0
         except Exception:
             return False
     return False
+
 
 
 def _get_active_token_payload() -> str:

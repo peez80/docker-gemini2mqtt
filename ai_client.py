@@ -4,7 +4,7 @@ import subprocess
 from typing import Optional
 from google import genai
 from google.genai import types
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from config import AppConfig
 
@@ -58,24 +58,24 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, client: genai.Client
     
     try:
         import mimetypes
-        if files:
-            for f in files:
-                if not os.path.exists(f):
-                    logger.warning("%sFile not found locally: %s", prefix, f)
-                    continue
-                
-                if config.ai_backend == "vertex":
-                    logger.debug("%sReading file inline for Vertex AI: %s", prefix, f)
-                    mime_type, _ = mimetypes.guess_type(f)
-                    if not mime_type:
-                        mime_type = "application/octet-stream"
-                    with open(f, "rb") as fh:
-                        contents.append(types.Part.from_bytes(data=fh.read(), mime_type=mime_type))
-                else:
-                    logger.debug("%sUploading file to AI API: %s", prefix, f)
-                    file_ref = client.files.upload(file=f)
-                    uploaded_files.append(file_ref)
-                    contents.append(file_ref)
+        for file_path in (files or []):
+            if not os.path.exists(file_path):
+                logger.warning("%sFile not found locally: %s", prefix, file_path)
+                continue
+            
+            if config.ai_backend == "vertex":
+                logger.debug("%sReading file inline for Vertex AI: %s", prefix, file_path)
+                mime_type, _ = mimetypes.guess_type(file_path)
+                if not mime_type:
+                    mime_type = "application/octet-stream"
+                with open(file_path, "rb") as fh:
+                    contents.append(types.Part.from_bytes(data=fh.read(), mime_type=mime_type))
+            else:
+                logger.debug("%sUploading file to AI API: %s", prefix, file_path)
+                file_ref = client.files.upload(file=file_path)
+                uploaded_files.append(file_ref)
+                contents.append(file_ref)
+
         
         contents.append(prompt)
         
@@ -92,9 +92,14 @@ def _call_gemini_with_retry(prompt: str, config: AppConfig, client: genai.Client
             except Exception as e:
                 logger.warning("%sFailed to delete file %s from AI API: %s", prefix, f_ref.name, e)
 
+class AntigravityAuthError(Exception):
+    """Raised when agy CLI fails due to missing, expired, or invalid OAuth credentials."""
+    pass
+
+
 @retry(
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(Exception),
+    retry=retry_if_not_exception_type(AntigravityAuthError),
     before_sleep=_before_sleep_custom_log,
     retry_error_callback=_on_retry_exhausted,
 )
@@ -133,7 +138,18 @@ def _call_agy_with_retry(prompt: str, config: AppConfig, log_context: str = "", 
         raise RuntimeError(f"agy CLI timed out after {config.agy_timeout_seconds}s") from e
 
     if res.returncode != 0:
-        err_msg = res.stderr.strip() or f"exit code {res.returncode}"
+        stdout_low = res.stdout.lower()
+        stderr_low = res.stderr.lower()
+        if (
+            "authentication required" in stdout_low
+            or "authentication required" in stderr_low
+            or "accounts.google.com/o/oauth2/auth" in stdout_low
+            or "paste the authorization code" in stdout_low
+        ):
+            logger.error("%sAntigravity CLI authentication required: OAuth token is missing, expired, or invalid.", prefix)
+            raise AntigravityAuthError("Antigravity CLI authentication required: OAuth token is missing, expired, or invalid.")
+
+        err_msg = res.stderr.strip() or res.stdout.strip() or f"exit code {res.returncode}"
         logger.warning("%sagy CLI returned code %d: %s", prefix, res.returncode, err_msg)
         raise RuntimeError(f"agy CLI failed (code {res.returncode}): {err_msg}")
 
@@ -160,11 +176,15 @@ class AIClient:
             logger.info("Initializing Antigravity (agy) CLI client (binary: %s)", config.agy_binary_path)
 
     def generate_content(self, prompt: str, files: list[str] = None, log_context: str = "") -> str:
-        if self.config.ai_backend == "agy":
-            return _call_agy_with_retry.retry_with(
+        try:
+            if self.config.ai_backend == "agy":
+                return _call_agy_with_retry.retry_with(
+                    stop=stop_after_attempt(self.config.gemini_retry_count)
+                )(prompt=prompt, config=self.config, log_context=log_context, files=files)
+            
+            return _call_gemini_with_retry.retry_with(
                 stop=stop_after_attempt(self.config.gemini_retry_count)
-            )(prompt=prompt, config=self.config, log_context=log_context, files=files)
-        
-        return _call_gemini_with_retry.retry_with(
-            stop=stop_after_attempt(self.config.gemini_retry_count)
-        )(prompt=prompt, config=self.config, client=self.client, log_context=log_context, files=files)
+            )(prompt=prompt, config=self.config, client=self.client, log_context=log_context, files=files)
+        except AntigravityAuthError as e:
+            return f"ERROR: {e}"
+

@@ -246,8 +246,48 @@ def test_ai_client_agy_failure_and_retry(mocker):
     assert mock_run.call_count == 2
 
 
+def test_ai_client_agy_auth_failure_fail_fast(mocker):
+    """Test that authentication failure in agy CLI fails fast without retries."""
+    config = AppConfig(
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_username=None,
+        mqtt_password=None,
+        mqtt_prompt_topic="test/prompt",
+        gemini_model="gemini-2.5-flash",
+        gemini_max_concurrent=2,
+        gemini_timeout_seconds=30,
+        gemini_retry_count=3,
+        ai_backend="agy",
+        vertex_project=None,
+        vertex_location=None,
+        agy_binary_path="agy",
+        agy_model=None,
+        agy_effort=None,
+        agy_timeout_seconds=120,
+        agy_dangerously_skip_permissions=True,
+    )
+
+    mock_run = mocker.patch("subprocess.run")
+    mock_run.return_value = MagicMock(
+        returncode=1,
+        stdout="Authentication required. Please visit the URL to log in: https://accounts.google.com/o/oauth2/auth",
+        stderr=""
+    )
+
+    ai_client = AIClient(config)
+    response = ai_client.generate_content("Say hello", [], "test_topic")
+
+    assert "authentication required" in response.lower() or "authentication failed" in response.lower()
+    # Must fail fast without retrying 3 times
+    assert mock_run.call_count == 1
+
+
+
+
 def test_has_agy_auth_helper(monkeypatch, tmp_path):
     from tests.test_e2e import _has_agy_auth
+
 
     # Case 1: No file, no env var
     fake_home = tmp_path / "home_empty"
@@ -290,6 +330,14 @@ def test_has_agy_auth_helper(monkeypatch, tmp_path):
     token_file.write_text("valid-raw-oauth-token")
     assert _has_agy_auth()
 
+    # Case 8: Nested token dict with refresh_token
+    token_file.write_text('{"token": {"refresh_token": "1//refresh-token-xyz", "token_type": "Bearer"}, "auth_method": "oauth"}')
+    assert _has_agy_auth()
+
+    # Case 9: Nested token dict with access_token and expiry
+    token_file.write_text('{"token": {"access_token": "ya29.access-xyz", "expiry": "2026-12-31T00:00:00Z"}, "auth_method": "oauth"}')
+    assert _has_agy_auth()
+
 
 def test_has_mounted_agy_config_helper(monkeypatch, tmp_path):
     from tests.test_e2e import _has_mounted_agy_config
@@ -308,9 +356,10 @@ def test_has_mounted_agy_config_helper(monkeypatch, tmp_path):
     token_file.write_text("   \n")
     assert not _has_mounted_agy_config()
 
-    # Valid token file
-    token_file.write_text('{"token": "mounted-token-abc"}')
+    # Valid token file with nested refresh_token
+    token_file.write_text('{"token": {"refresh_token": "1//refresh-123"}}')
     assert _has_mounted_agy_config()
+
 
 
 def test_get_active_token_payload_helper(monkeypatch, tmp_path):
