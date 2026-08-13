@@ -34,6 +34,7 @@ jobs:
       - name: Run Tests in Docker Container
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
         run: |
           mkdir -p /home/runner/.gemini
           docker run --rm \
@@ -42,6 +43,7 @@ jobs:
             -v ${{ github.workspace }}:/app \
             -w /app \
             -e GEMINI_API_KEY \
+            -e ANTIGRAVITY_OAUTH_TOKEN \
             --entrypoint bash \
             gemini2mqtt:test \
             -c "pip install uv && uv run pytest -v --run-e2e"
