@@ -37,7 +37,7 @@ jobs:
           ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
         run: |
           mkdir -p /home/runner/.gemini
-          docker run --rm \
+          docker run --rm --network host \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /home/runner/.gemini:/root/.gemini \
             -v ${{ github.workspace }}:/app \
