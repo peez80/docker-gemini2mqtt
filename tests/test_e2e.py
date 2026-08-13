@@ -151,9 +151,42 @@ def test_real_vertex_api_integration(mqtt_broker, monkeypatch, tmp_path):
 
 
 def _has_agy_auth() -> bool:
-    """Check if an Antigravity CLI OAuth token or environment secret is available."""
+    """Check if a valid Antigravity CLI OAuth token or environment secret is available."""
+    # 1. Check environment variable
+    env_token = os.environ.get("ANTIGRAVITY_OAUTH_TOKEN", "").strip()
+    if env_token:
+        try:
+            data = json.loads(env_token)
+            if isinstance(data, dict):
+                token_val = data.get("token") or data.get("access_token") or ""
+                if str(token_val).strip():
+                    return True
+            elif str(data).strip():
+                return True
+        except Exception:
+            if len(env_token) > 0:
+                return True
+
+    # 2. Check token file
     token_path = os.path.expanduser("~/.gemini/antigravity-cli/antigravity-oauth-token")
-    return (os.path.exists(token_path) and os.path.getsize(token_path) > 0) or bool(os.environ.get("ANTIGRAVITY_OAUTH_TOKEN"))
+    if os.path.exists(token_path) and os.path.isfile(token_path):
+        try:
+            with open(token_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if not content:
+                return False
+            try:
+                data = json.loads(content)
+                if isinstance(data, dict):
+                    token_val = data.get("token") or data.get("access_token") or ""
+                    return bool(str(token_val).strip())
+                return bool(str(data).strip())
+            except Exception:
+                return len(content) > 0
+        except Exception:
+            return False
+
+    return False
 
 
 @pytest.mark.e2e
@@ -163,12 +196,25 @@ def _has_agy_auth() -> bool:
 )
 @pytest.mark.skipif(
     not _has_agy_auth(),
-    reason="agy CLI authentication token not found (~/.gemini/antigravity-cli/antigravity-oauth-token or ANTIGRAVITY_OAUTH_TOKEN). Skipping agy E2E test."
+    reason="agy CLI authentication token not found or empty (~/.gemini/antigravity-cli/antigravity-oauth-token or ANTIGRAVITY_OAUTH_TOKEN). Skipping agy E2E test."
 )
 def test_real_agy_cli_integration(mqtt_broker, monkeypatch, tmp_path):
     """
     End-to-End integration test using agy CLI backend with JSON payload and a local file in context.
     """
+    # Bootstrap full config folder if provided via ANTIGRAVITY_CONFIG_BASE64 env var
+    env_config_b64 = os.environ.get("ANTIGRAVITY_CONFIG_BASE64")
+    if env_config_b64:
+        import base64
+        import io
+        import tarfile
+        try:
+            data = base64.b64decode(env_config_b64)
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+                tar.extractall(path=os.path.expanduser("~"))
+        except Exception as e:
+            pass
+
     # Bootstrap token file if provided via ANTIGRAVITY_OAUTH_TOKEN env var
     env_token = os.environ.get("ANTIGRAVITY_OAUTH_TOKEN")
     token_file = os.path.expanduser("~/.gemini/antigravity-cli/antigravity-oauth-token")

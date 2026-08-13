@@ -22,11 +22,15 @@ jobs:
 
       - name: Setup Antigravity Auth
         env:
+          ANTIGRAVITY_CONFIG_BASE64: ${{ secrets.ANTIGRAVITY_CONFIG_BASE64 }}
           ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
         run: |
           mkdir -p /home/runner/.gemini/antigravity-cli
+          if [ -n "$ANTIGRAVITY_CONFIG_BASE64" ]; then
+            echo "$ANTIGRAVITY_CONFIG_BASE64" | base64 -d | tar -xz -C /home/runner/
+          fi
           echo '{"allowNonWorkspaceAccess": true}' > /home/runner/.gemini/antigravity-cli/settings.json
-          if [ -n "$ANTIGRAVITY_OAUTH_TOKEN" ]; then
+          if [ -n "$ANTIGRAVITY_OAUTH_TOKEN" ] && [ ! -f /home/runner/.gemini/antigravity-cli/antigravity-oauth-token ]; then
             printf '%s\n' "$ANTIGRAVITY_OAUTH_TOKEN" > /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
             chmod 600 /home/runner/.gemini/antigravity-cli/antigravity-oauth-token
           fi
@@ -35,15 +39,17 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTIGRAVITY_OAUTH_TOKEN: ${{ secrets.ANTIGRAVITY_OAUTH_TOKEN }}
+          ANTIGRAVITY_CONFIG_BASE64: ${{ secrets.ANTIGRAVITY_CONFIG_BASE64 }}
         run: |
           mkdir -p /home/runner/.gemini
-          docker run --rm --network host \
+          docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /home/runner/.gemini:/root/.gemini \
             -v ${{ github.workspace }}:/app \
             -w /app \
             -e GEMINI_API_KEY \
             -e ANTIGRAVITY_OAUTH_TOKEN \
+            -e ANTIGRAVITY_CONFIG_BASE64 \
             --entrypoint bash \
             gemini2mqtt:test \
             -c "pip install uv && uv run pytest -v --run-e2e"

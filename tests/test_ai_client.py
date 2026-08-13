@@ -256,16 +256,39 @@ def test_has_agy_auth_helper(monkeypatch, tmp_path):
     monkeypatch.delenv("ANTIGRAVITY_OAUTH_TOKEN", raising=False)
     assert not _has_agy_auth()
 
-    # Case 2: Env var provided
+    # Case 2: Env var provided with valid token
     monkeypatch.setenv("ANTIGRAVITY_OAUTH_TOKEN", "secret-token-123")
     assert _has_agy_auth()
 
-    # Case 3: Token file present
+    # Case 3: Env var is empty or only whitespace
+    monkeypatch.setenv("ANTIGRAVITY_OAUTH_TOKEN", "")
+    assert not _has_agy_auth()
+    monkeypatch.setenv("ANTIGRAVITY_OAUTH_TOKEN", "   \n\t  ")
+    assert not _has_agy_auth()
+
+    # Case 4: Token file with whitespace/newline only (e.g. echo "$EMPTY_SECRET" > file)
     monkeypatch.delenv("ANTIGRAVITY_OAUTH_TOKEN", raising=False)
     token_dir = fake_home / ".gemini" / "antigravity-cli"
-    token_dir.mkdir(parents=True)
+    token_dir.mkdir(parents=True, exist_ok=True)
     token_file = token_dir / "antigravity-oauth-token"
-    token_file.write_text("oauth-token-content")
+    
+    token_file.write_text("\n")
+    assert not _has_agy_auth()
+
+    token_file.write_text("   \n   ")
+    assert not _has_agy_auth()
+
+    # Case 5: Token file with invalid JSON or empty token inside JSON
+    token_file.write_text('{"token": ""}')
+    assert not _has_agy_auth()
+
+    # Case 6: Token file with valid JSON token
+    token_file.write_text('{"token": "valid-token-xyz", "auth_method": "oauth"}')
     assert _has_agy_auth()
+
+    # Case 7: Token file with valid non-JSON string
+    token_file.write_text("valid-raw-oauth-token")
+    assert _has_agy_auth()
+
 
 
