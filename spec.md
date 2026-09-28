@@ -18,7 +18,8 @@ All necessary configuration is done via environment variables, e.g.
 - AI Backend selector: `AI_BACKEND` (`gemini`, `vertex`, `agy`)
 - GEMINI API Key (`GEMINI_API_KEY`) and Model (`GEMINI_MODEL`)
 - Vertex AI Project & Location (`VERTEX_GOOGLE_CLOUD_PROJECT`, `VERTEX_GOOGLE_CLOUD_LOCATION`)
-- Antigravity CLI (`AGY_BINARY_PATH`, `AGY_MODEL`, `AGY_EFFORT`, `AGY_TIMEOUT_SECONDS`, `AGY_DANGEROUSLY_SKIP_PERMISSIONS`)
+- Antigravity CLI (`AGY_BINARY_PATH`, `AGY_MODEL`, `AGY_EFFORT`, `AGY_TIMEOUT_SECONDS`, `AGY_DANGEROUSLY_SKIP_PERMISSIONS`, `AGY_CONCURRENT_REQUEST_DELAY_SECONDS`)
+
 
 ## Deployment
 The tool is written in Python and can be deployed as a Docker container or run natively with `uv`.

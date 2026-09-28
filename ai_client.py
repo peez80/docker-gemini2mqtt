@@ -1,4 +1,6 @@
 import os
+import time
+import threading
 import logging
 import subprocess
 from typing import Optional
@@ -159,6 +161,9 @@ class AIClient:
     def __init__(self, config: AppConfig):
         self.config = config
         self.client: Optional[genai.Client] = None
+        self._agy_start_lock = threading.Lock()
+        self._last_agy_call_start: float = 0.0
+
         if config.ai_backend == "vertex":
             logger.info("Initializing Vertex AI client (project: %s, location: %s)", config.vertex_project, config.vertex_location)
             self.client = genai.Client(
@@ -178,6 +183,19 @@ class AIClient:
     def generate_content(self, prompt: str, files: list[str] = None, log_context: str = "") -> str:
         try:
             if self.config.ai_backend == "agy":
+                with self._agy_start_lock:
+                    now = time.monotonic()
+                    elapsed = now - self._last_agy_call_start
+                    delay = self.config.agy_concurrent_request_delay_seconds - elapsed
+                    if self._last_agy_call_start > 0 and delay > 0:
+                        prefix = f"[Topic: {log_context}] " if log_context else ""
+                        logger.info(
+                            "%sStaggering agy CLI start: waiting %.2fs to prevent token race condition...",
+                            prefix, delay
+                        )
+                        time.sleep(delay)
+                    self._last_agy_call_start = time.monotonic()
+
                 return _call_agy_with_retry.retry_with(
                     stop=stop_after_attempt(self.config.gemini_retry_count)
                 )(prompt=prompt, config=self.config, log_context=log_context, files=files)

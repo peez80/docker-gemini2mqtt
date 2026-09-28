@@ -68,3 +68,20 @@ def test_load_config_agy_backend_custom(monkeypatch):
     assert config.agy_effort == "high"
     assert config.agy_timeout_seconds == 60
     assert config.agy_dangerously_skip_permissions is False
+
+def test_load_config_agy_concurrent_request_delay_default(monkeypatch):
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/topic")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.delenv("AGY_CONCURRENT_REQUEST_DELAY_SECONDS", raising=False)
+
+    config = load_config()
+    assert config.agy_concurrent_request_delay_seconds == 5.0
+
+def test_load_config_agy_concurrent_request_delay_custom(monkeypatch):
+    monkeypatch.setenv("MQTT_PROMPT_TOPIC", "test/topic")
+    monkeypatch.setenv("AI_BACKEND", "agy")
+    monkeypatch.setenv("AGY_CONCURRENT_REQUEST_DELAY_SECONDS", "2.5")
+
+    config = load_config()
+    assert config.agy_concurrent_request_delay_seconds == 2.5
+

@@ -25,6 +25,7 @@ class AppConfig:
     agy_effort: Optional[str] = None
     agy_timeout_seconds: int = 120
     agy_dangerously_skip_permissions: bool = True
+    agy_concurrent_request_delay_seconds: float = 5.0
 
 def load_config() -> AppConfig:
     def get_env(name: str, default: Optional[str] = None, required: bool = False) -> str:
@@ -42,6 +43,7 @@ def load_config() -> AppConfig:
     agy_timeout_seconds = int(get_env("AGY_TIMEOUT_SECONDS", str(gemini_timeout_seconds)))
     agy_skip_perms_str = get_env("AGY_DANGEROUSLY_SKIP_PERMISSIONS", "true").lower()
     agy_dangerously_skip_permissions = agy_skip_perms_str in ("true", "1", "yes")
+    agy_concurrent_request_delay_seconds = max(0.0, float(get_env("AGY_CONCURRENT_REQUEST_DELAY_SECONDS", "5.0")))
 
     return AppConfig(
         mqtt_host=get_env("MQTT_HOST", "localhost"),
@@ -61,4 +63,5 @@ def load_config() -> AppConfig:
         agy_effort=get_env("AGY_EFFORT"),
         agy_timeout_seconds=agy_timeout_seconds,
         agy_dangerously_skip_permissions=agy_dangerously_skip_permissions,
+        agy_concurrent_request_delay_seconds=agy_concurrent_request_delay_seconds,
     )

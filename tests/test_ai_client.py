@@ -382,5 +382,145 @@ def test_get_active_token_payload_helper(monkeypatch, tmp_path):
     assert _get_active_token_payload() == "file-token-456"
 
 
+def test_ai_client_agy_staggered_start(mocker):
+    import threading
+    import time
+    config = AppConfig(
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_username=None,
+        mqtt_password=None,
+        mqtt_prompt_topic="test/prompt",
+        gemini_model="gemini",
+        gemini_max_concurrent=2,
+        gemini_timeout_seconds=120,
+        gemini_retry_count=1,
+        ai_backend="agy",
+        vertex_project=None,
+        vertex_location=None,
+        agy_concurrent_request_delay_seconds=0.2,
+    )
+    ai_client = AIClient(config)
+    start_times = []
+    lock = threading.Lock()
+
+    def fake_run(*args, **kwargs):
+        with lock:
+            start_times.append(time.monotonic())
+        time.sleep(0.05)
+        return MagicMock(returncode=0, stdout="Result\n", stderr="")
+
+    mocker.patch("subprocess.run", side_effect=fake_run)
+
+    t1 = threading.Thread(target=ai_client.generate_content, args=("prompt 1",))
+    t2 = threading.Thread(target=ai_client.generate_content, args=("prompt 2",))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert len(start_times) == 2
+    delay_diff = start_times[1] - start_times[0]
+    assert delay_diff >= 0.18, f"Expected at least ~0.2s delay between starts, got {delay_diff}s"
+
+
+def test_ai_client_agy_parallel_execution(mocker):
+    import threading
+    import time
+    config = AppConfig(
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_username=None,
+        mqtt_password=None,
+        mqtt_prompt_topic="test/prompt",
+        gemini_model="gemini",
+        gemini_max_concurrent=2,
+        gemini_timeout_seconds=120,
+        gemini_retry_count=1,
+        ai_backend="agy",
+        vertex_project=None,
+        vertex_location=None,
+        agy_concurrent_request_delay_seconds=0.1,
+    )
+    ai_client = AIClient(config)
+    active_calls = 0
+    max_concurrent_seen = 0
+    lock = threading.Lock()
+
+    def fake_run(*args, **kwargs):
+        nonlocal active_calls, max_concurrent_seen
+        with lock:
+            active_calls += 1
+            if active_calls > max_concurrent_seen:
+                max_concurrent_seen = active_calls
+        time.sleep(0.3)
+        with lock:
+            active_calls -= 1
+        return MagicMock(returncode=0, stdout="Result\n", stderr="")
+
+    mocker.patch("subprocess.run", side_effect=fake_run)
+
+    t1 = threading.Thread(target=ai_client.generate_content, args=("prompt 1",))
+    t2 = threading.Thread(target=ai_client.generate_content, args=("prompt 2",))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert max_concurrent_seen == 2, f"Expected 2 concurrent calls during overlap, got {max_concurrent_seen}"
+
+
+def test_ai_client_gemini_no_delay(mocker):
+    import threading
+    import time
+    config = AppConfig(
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_username=None,
+        mqtt_password=None,
+        mqtt_prompt_topic="test/prompt",
+        gemini_model="gemini",
+        gemini_max_concurrent=2,
+        gemini_timeout_seconds=120,
+        gemini_retry_count=1,
+        ai_backend="gemini",
+        vertex_project=None,
+        vertex_location=None,
+    )
+    mock_client_class = mocker.patch("ai_client.genai.Client")
+    mock_client_instance = MagicMock()
+    mock_response = MagicMock(text="Gemini Answer")
+    mock_client_class.return_value = mock_client_instance
+
+    start_times = []
+    lock = threading.Lock()
+
+    def fake_gen(*args, **kwargs):
+        with lock:
+            start_times.append(time.monotonic())
+        time.sleep(0.05)
+        return mock_response
+
+    mock_client_instance.models.generate_content.side_effect = fake_gen
+
+    ai_client = AIClient(config)
+
+    t1 = threading.Thread(target=ai_client.generate_content, args=("prompt 1",))
+    t2 = threading.Thread(target=ai_client.generate_content, args=("prompt 2",))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert len(start_times) == 2
+    delay_diff = abs(start_times[1] - start_times[0])
+    assert delay_diff < 0.1, f"Expected Gemini calls to start without delay, got {delay_diff}s"
+
+
+
+
 
 

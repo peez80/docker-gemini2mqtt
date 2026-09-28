@@ -104,6 +104,8 @@ cp .env.example .env
 | `AGY_EFFORT` | – | – | Reasoning effort for agy CLI (`low`, `medium`, `high`) |
 | `AGY_TIMEOUT_SECONDS` | `120` | – | Timeout for agy CLI calls in seconds |
 | `AGY_DANGEROUSLY_SKIP_PERMISSIONS`| `true` | – | Auto-approve tool permissions for headless MQTT execution |
+| `AGY_CONCURRENT_REQUEST_DELAY_SECONDS` | `5.0` | – | Min. delay in seconds between starting concurrent agy CLI requests |
+
 
 ---
 
@@ -238,6 +240,7 @@ AGY_MODEL=gemini-3.6-flash-high       # Optional model override
 AGY_EFFORT=high                      # Reasoning effort: low, medium, or high
 AGY_TIMEOUT_SECONDS=120              # Max timeout per CLI prompt execution
 AGY_DANGEROUSLY_SKIP_PERMISSIONS=true # Auto-approve tool calls for headless MQTT execution
+AGY_CONCURRENT_REQUEST_DELAY_SECONDS=5.0 # Stagger concurrent agy process starts to prevent token race conditions
 ```
 
 #### 4. Docker Compose Setup for `agy`
@@ -254,12 +257,22 @@ services:
       AGY_MODEL: "gemini-3.6-flash-high"
       AGY_EFFORT: "high"
       AGY_DANGEROUSLY_SKIP_PERMISSIONS: "true"
+      AGY_CONCURRENT_REQUEST_DELAY_SECONDS: "5.0"
     volumes:
       # Mount host credentials into the container
       - "${HOME}/.gemini:/root/.gemini"
       # Optional: mount local documents directory for file attachment prompts
       - "/path/to/docs:/data/docs"
 ```
+
+#### 5. Concurrency & Staggered Start (OAuth Race Condition Protection)
+Google OAuth 2.0 enforces Refresh Token Rotation. If multiple `agy` CLI processes start simultaneously with an expired or expiring access token, they attempt to refresh the session concurrently. Google rotates the refresh token on the first request and revokes the session on subsequent requests using the old token (`invalid_grant` / "token revoked").
+
+To prevent this while preserving full parallel throughput:
+- `gemini2mqtt` automatically staggers the **start time** of concurrent `agy` CLI requests by `AGY_CONCURRENT_REQUEST_DELAY_SECONDS` (default: `5.0`s).
+- Once started, requests execute in **parallel** up to the configured `GEMINI_MAX_CONCURRENT` limit.
+- Requests arriving after idle periods start immediately with zero delay.
+
 
 
 ---
