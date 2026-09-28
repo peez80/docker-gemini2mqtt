@@ -36,8 +36,8 @@ class Gemini2MqttApp:
         self.mqtt_client.register_message_callback(self.on_mqtt_message)
 
     def on_mqtt_message(self, response_topic: str, prompt: str, files: list[str]) -> None:
-        logger.info("Forwarding prompt to %s AI API (response → '%s')", self.config.ai_backend.capitalize(), response_topic)
-        
+        logger.info("Enqueued prompt from MQTT (response → '%s')", response_topic)
+
         def worker_fn():
             try:
                 response = self.ai_client.generate_content(prompt, files=files, log_context=response_topic)

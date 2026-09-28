@@ -520,6 +520,64 @@ def test_ai_client_gemini_no_delay(mocker):
     assert delay_diff < 0.1, f"Expected Gemini calls to start without delay, got {delay_diff}s"
 
 
+def test_ai_client_agy_five_concurrent_staggered_start(mocker, caplog):
+    import threading
+    import time
+    import logging
+
+    caplog.set_level(logging.INFO)
+
+    config = AppConfig(
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_username=None,
+        mqtt_password=None,
+        mqtt_prompt_topic="test/prompt",
+        gemini_model="gemini",
+        gemini_max_concurrent=5,
+        gemini_timeout_seconds=120,
+        gemini_retry_count=1,
+        ai_backend="agy",
+        vertex_project=None,
+        vertex_location=None,
+        agy_concurrent_request_delay_seconds=0.1,
+    )
+    ai_client = AIClient(config)
+    start_times = []
+    lock = threading.Lock()
+
+    def fake_run(*args, **kwargs):
+        with lock:
+            start_times.append(time.monotonic())
+        time.sleep(0.05)
+        return MagicMock(returncode=0, stdout="Result\n", stderr="")
+
+    mocker.patch("subprocess.run", side_effect=fake_run)
+
+    threads = [
+        threading.Thread(
+            target=ai_client.generate_content,
+            args=(f"prompt {i}",),
+            kwargs={"log_context": f"topic_{i}"},
+        )
+        for i in range(5)
+    ]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(start_times) == 5
+    for i in range(1, len(start_times)):
+        gap = start_times[i] - start_times[i - 1]
+        assert gap >= 0.08, f"Expected at least ~0.1s between start {i-1} and {i}, got {gap}s"
+
+    start_logs = [r.message for r in caplog.records if "Starting agy CLI execution" in r.message]
+    assert len(start_logs) == 5
+
+
+
 
 
 

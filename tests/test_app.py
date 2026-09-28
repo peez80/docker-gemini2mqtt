@@ -357,3 +357,23 @@ def test_api_failure_flow_agy(mqtt_broker, monkeypatch, mocker):
         test_client.disconnect()
         app.stop()
 
+
+def test_on_mqtt_message_enqueued_log(mocker, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+
+    mock_config = MagicMock()
+    mock_config.gemini_max_concurrent = 2
+    mock_config.ai_backend = "agy"
+
+    mocker.patch("main.TaskManager")
+    mocker.patch("main.AIClient")
+    mocker.patch("main.MqttClient")
+
+    app = Gemini2MqttApp(mock_config)
+    app.on_mqtt_message("test/response", "hello world", [])
+
+    enqueued_logs = [r.message for r in caplog.records if "Enqueued prompt from MQTT (response → 'test/response')" in r.message]
+    assert len(enqueued_logs) == 1
+
+

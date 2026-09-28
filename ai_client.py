@@ -124,6 +124,7 @@ def _call_agy_with_retry(prompt: str, config: AppConfig, log_context: str = "", 
     if config.agy_dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
 
+    logger.info("%sStarting agy CLI execution (model: %s)...", prefix, config.agy_model or "default")
     logger.debug("%sExecuting agy CLI command: %s", prefix, " ".join(cmd[:3]))
 
     try:

@@ -38,6 +38,7 @@ services:
       AGY_EFFORT: "${AGY_EFFORT:-}"
       AGY_TIMEOUT_SECONDS: "${AGY_TIMEOUT_SECONDS:-120}"
       AGY_DANGEROUSLY_SKIP_PERMISSIONS: "${AGY_DANGEROUSLY_SKIP_PERMISSIONS:-true}"
+      AGY_CONCURRENT_REQUEST_DELAY_SECONDS: "${AGY_CONCURRENT_REQUEST_DELAY_SECONDS:-5.0}"
     # volumes:
     #   - "${VERTEX_CREDENTIAL_FILE:-~/.gemini_vertex/vertex_test_key.json}:/mnt/key/key.json"
     #   - "${HOME}/.gemini:/root/.gemini"
